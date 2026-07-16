@@ -1,0 +1,10 @@
+CREATE TABLE athletes (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL
+);
+
+CREATE TABLE activities (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    athlete_id BIGINT NOT NULL,
+    started_at DATETIME NOT NULL
+);
