@@ -2,8 +2,7 @@ package com.aicoach.backend.service;
 
 import com.aicoach.backend.client.GarminBotClient;
 import com.aicoach.backend.dto.GarminBotResponseDTO;
-import com.aicoach.backend.models.Activity;
-import com.aicoach.backend.models.Athlete;
+import com.aicoach.backend.models.*;
 import com.aicoach.backend.repository.AthleteRepo;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +10,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import com.aicoach.backend.repository.ActivityRepo;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -116,6 +116,82 @@ public class ActivityService {
         activity.setStartedAt(dto.startedAt());
         activity.setAverageHeartRate(dto.averageHeartRate());
         activity.setAverageSpeed(dto.averageSpeed());
+        activity.setSport(dto.sport());
+        activity.setSubSport(dto.subSport());
+
+        if (dto.isVdotTest() != null) {
+            activity.setIsVdotTest(dto.isVdotTest());
+        }
+
+        activity.setEndedAt(dto.endedAt());
+        // Removidas as linhas duplicadas de duration, avgHr, etc.
+        activity.setMaxSpeedKmh(dto.maxSpeedKmh());
+        activity.setAvgPaceSPerKm(dto.avgPaceSPerKm());
+        activity.setBestPaceSPerKm(dto.bestPaceSPerKm());
+        activity.setMaxHr(dto.maxHr());
+        activity.setAvgCadence(dto.avgCadence());
+        activity.setMaxCadence(dto.maxCadence());
+        activity.setElevationGainM(dto.elevationGainM());
+        activity.setElevationLossM(dto.elevationLossM());
+        activity.setMinAltitudeM(dto.minAltitudeM());
+        activity.setMaxAltitudeM(dto.maxAltitudeM());
+        activity.setLapCount(dto.lapCount());
+        activity.setRecordCount(dto.recordCount());
+        activity.setRawFilePath(dto.rawFilePath());
+
+        if (dto.laps() != null && !dto.laps().isEmpty()) {
+            List<Lap> laps = dto.laps().stream().map(lapDTO -> {
+                Lap lap = new Lap();
+                lap.setActivity(activity);
+                lap.setLapNumber(lapDTO.lapNumber());
+                lap.setStartTime(lapDTO.startTime());
+
+                if (lapDTO.durationS() != null) {
+                    lap.setDurationS(lapDTO.durationS());
+                }
+
+                lap.setDistanceKm(lapDTO.distanceKm());
+                lap.setAvgPaceSPerKm(lapDTO.avgPaceSPerKm());
+                lap.setAvgSpeedKmh(lapDTO.avgSpeedKmh());
+                lap.setAvgHr(lapDTO.avgHr());
+                lap.setMaxHr(lapDTO.maxHr());
+                lap.setAvgCadence(lapDTO.avgCadence());
+                lap.setMaxCadence(lapDTO.maxCadence());
+                lap.setAscentM(lapDTO.ascentM());
+                lap.setDescentM(lapDTO.descentM());
+
+                return lap;
+            }).toList();
+
+            activity.getLaps().addAll(laps);
+        }
+
+        if (dto.records() != null && !dto.records().isEmpty()) {
+            List<ActivityRecord> records = dto.records().stream().map(recordDTO -> {
+                ActivityRecord record = new ActivityRecord();
+                record.setActivity(activity);
+
+                ActivityRecordId recordId = new ActivityRecordId();
+                recordId.setTs(recordDTO.ts());
+                record.setId(recordId);
+
+                if (recordDTO.elapsedS() != null) {
+                    record.setElapsedS(recordDTO.elapsedS().shortValue());
+                }
+
+                record.setDistanceKm(recordDTO.distanceKm());
+                record.setSpeedKmh(recordDTO.speedKmh());
+                record.setPaceSPerKm(recordDTO.paceSPerKm());
+                record.setHeartRate(recordDTO.heartRate());
+                record.setCadence(recordDTO.cadence());
+                record.setAltitudeM(recordDTO.altitudeM());
+
+                return record;
+            }).toList();
+
+            activity.getRecords().addAll(records);
+        }
+
         return activity;
     }
 }
