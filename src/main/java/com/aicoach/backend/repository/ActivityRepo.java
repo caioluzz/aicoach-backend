@@ -6,4 +6,6 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ActivityRepo extends JpaRepository<Activity, Long> {
+
+    boolean existsByGarminActivityId(Long garminActivityId);
 }

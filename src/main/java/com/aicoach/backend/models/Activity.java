@@ -19,4 +19,21 @@ public class Activity {
 
     @Column(name = "started_at", nullable = false)
     private LocalDateTime startedAt;
+
+    @Column(name = "garmin_activity_id", unique = true)
+    private Long garminActivityId;
+
+    private String name;
+
+    @Column(name = "distance_meters")
+    private Double distanceMeters;
+
+    @Column(name = "duration_seconds")
+    private Double durationSeconds;
+
+    @Column(name = "average_heart_rate")
+    private Integer averageHeartRate;
+
+    @Column(name = "average_speed")
+    private Double averageSpeed;
 }
