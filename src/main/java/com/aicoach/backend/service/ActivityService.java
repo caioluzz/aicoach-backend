@@ -33,7 +33,7 @@ public class ActivityService {
     }
 
     @Scheduled(fixedDelay = 60000)
-    public void rotinaDiariaDeSincronizacao() {
+    public void dailySyncRoutine() {
         System.out.println("[ActivityService] Iniciando rotina de sincronização automática com a Garmin...");
 
         List<Athlete> athletes = athleteRepo.findAll();
@@ -70,31 +70,27 @@ public class ActivityService {
 
         activities.stream()
                 .filter(dto -> dto.activityName().toLowerCase().contains("teste 3km") || dto.activityName().toLowerCase().contains("vdot"))
-                .findFirst() // Pega o primeiro que encontrar com esse nome
+                .findFirst()
                 .ifPresent(dto -> {
                     Activity vdotTest = mapToEntity(dto, athlete);
-                    vdotTest.setIsVdotTest(true); // Marca a flag de marco zero!
+                    vdotTest.setIsVdotTest(true);
                     activityRepo.save(vdotTest);
                 });
     }
 
     private void findActivities(Athlete athlete) {
-        // 1. Busca a data do teste de 3km (marco zero) salvo no banco
         LocalDateTime dataMarcoZero = activityRepo.findByAthleteIdAndIsVdotTestTrue(athlete.getId())
                 .map(Activity::getStartedAt)
                 .orElse(null);
 
-        // Se por algum motivo o marco zero sumiu, não prossegue
         if (dataMarcoZero == null) {
             return;
         }
 
-        // Puxa só as recentes para economizar tempo (ex: últimas 10)
         List<GarminBotResponseDTO> activities = garminBotClient.fetchActivities(
                 athlete.getGarminEmail(), athlete.getGarminPassword(), 10
         );
 
-        // Filtra: DEPOIS do teste E que NÃO existem no banco e converte para entidade
         List<Activity> novasAtividades = activities.stream()
                 .filter(dto -> dto.startedAt() != null && dto.startedAt().isAfter(dataMarcoZero))
                 .filter(dto -> !activityRepo.existsByGarminActivityId(dto.activityId()))
@@ -105,7 +101,6 @@ public class ActivityService {
                 })
                 .toList();
 
-        // Salva tudo de uma vez
         if (!novasAtividades.isEmpty()) {
             activityRepo.saveAll(novasAtividades);
         }
