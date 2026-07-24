@@ -36,4 +36,7 @@ public class Activity {
 
     @Column(name = "average_speed")
     private Double averageSpeed;
+
+    @Column(name = "is_vdot_test", nullable = false)
+    private Boolean isVdotTest = false;
 }

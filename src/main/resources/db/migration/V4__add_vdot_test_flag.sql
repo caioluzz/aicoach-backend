@@ -1,0 +1,2 @@
+ALTER TABLE activities
+ADD COLUMN is_vdot_test BOOLEAN DEFAULT FALSE;
