@@ -1,7 +1,7 @@
 package com.aicoach.backend.controller;
 
 import com.aicoach.backend.api.AthleteApi;
-import com.aicoach.backend.domain.Athlete;
+import com.aicoach.backend.models.Athlete;
 import com.aicoach.backend.service.AthleteService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RestController;

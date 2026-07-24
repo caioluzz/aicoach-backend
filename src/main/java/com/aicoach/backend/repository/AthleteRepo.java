@@ -1,6 +1,6 @@
 package com.aicoach.backend.repository;
 
-import com.aicoach.backend.domain.Athlete;
+import com.aicoach.backend.models.Athlete;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

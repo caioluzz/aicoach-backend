@@ -1,6 +1,6 @@
 package com.aicoach.backend.api;
 
-import com.aicoach.backend.domain.Athlete;
+import com.aicoach.backend.models.Athlete;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 

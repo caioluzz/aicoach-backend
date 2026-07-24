@@ -1,4 +1,4 @@
-package com.aicoach.backend.domain;
+package com.aicoach.backend.models;
 
 import jakarta.persistence.*;
 import lombok.Data;

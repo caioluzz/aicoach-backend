@@ -1,6 +1,6 @@
 package com.aicoach.backend.service;
 
-import com.aicoach.backend.domain.Athlete;
+import com.aicoach.backend.models.Athlete;
 import com.aicoach.backend.repository.AthleteRepo;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
