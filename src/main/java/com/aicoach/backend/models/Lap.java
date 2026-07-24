@@ -26,6 +26,9 @@ public class Lap {
     @Column(name = "lap_number", nullable = false)
     private Short lapNumber;
 
+    @Column(name = "lap_type", length = 30)
+    private String lapType;
+
     @Column(name = "start_time")
     private LocalDateTime startTime;
 

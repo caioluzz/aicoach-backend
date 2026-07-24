@@ -1,0 +1,2 @@
+ALTER TABLE laps
+ADD COLUMN lap_type VARCHAR(30);

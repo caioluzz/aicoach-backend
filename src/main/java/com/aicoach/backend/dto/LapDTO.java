@@ -9,6 +9,9 @@ public record LapDTO(
         @JsonProperty("lap_number")
         Short lapNumber,
 
+        @JsonProperty("lap_type")
+        String lapType,
+
         @JsonProperty("start_time")
         @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         LocalDateTime startTime,

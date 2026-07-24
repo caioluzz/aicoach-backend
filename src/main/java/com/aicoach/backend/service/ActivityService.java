@@ -10,7 +10,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import com.aicoach.backend.repository.ActivityRepo;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -124,7 +123,6 @@ public class ActivityService {
         }
 
         activity.setEndedAt(dto.endedAt());
-        // Removidas as linhas duplicadas de duration, avgHr, etc.
         activity.setMaxSpeedKmh(dto.maxSpeedKmh());
         activity.setAvgPaceSPerKm(dto.avgPaceSPerKm());
         activity.setBestPaceSPerKm(dto.bestPaceSPerKm());
@@ -144,6 +142,7 @@ public class ActivityService {
                 Lap lap = new Lap();
                 lap.setActivity(activity);
                 lap.setLapNumber(lapDTO.lapNumber());
+                lap.setLapType(lapDTO.lapType());
                 lap.setStartTime(lapDTO.startTime());
 
                 if (lapDTO.durationS() != null) {
