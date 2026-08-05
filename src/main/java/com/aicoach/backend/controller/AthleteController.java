@@ -1,6 +1,8 @@
 package com.aicoach.backend.controller;
 
 import com.aicoach.backend.api.AthleteApi;
+import com.aicoach.backend.dto.AthleteRequestDTO;
+import com.aicoach.backend.dto.CreatedAthleteResponseDTO;
 import com.aicoach.backend.models.Athlete;
 import com.aicoach.backend.service.AthleteService;
 import lombok.RequiredArgsConstructor;
@@ -15,8 +17,9 @@ public class AthleteController implements AthleteApi {
     private final AthleteService athleteService;
 
     @Override
-    public Athlete createAthlete(Athlete request) {
-        return athleteService.saveAthlete(request);
+    public CreatedAthleteResponseDTO createAthlete(AthleteRequestDTO request) {
+        Athlete savedAthlete = athleteService.saveAthlete(request);
+        return new CreatedAthleteResponseDTO(savedAthlete.getId(), "Atleta cadastrado com sucesso!");
     }
 
     @Override

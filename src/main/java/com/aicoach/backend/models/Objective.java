@@ -25,8 +25,8 @@ public class Objective {
     @Column(name = "target_date", nullable = false)
     private LocalDate targetDate; // Ex: 2026-08-02
 
-    @Column(name = "target_distance_km", nullable = false)
-    private Double targetDistanceKm;
+    @Column(name = "target_distance_m", nullable = false)
+    private Integer targetDistance_m;
 
     @Column(name = "target_time_minutes")
     private Integer targetTimeMinutes;

@@ -9,8 +9,4 @@ import java.util.List;
 
 @Repository
 public interface PlannedActivityRepo extends JpaRepository<PlannedActivity, Long> {
-    List<PlannedActivity> findByTrainingCycleId(Long trainingCycleId);
-
-    List<PlannedActivity> findByTrainingCycle_GlobalPlan_AthleteIdAndDateBetween(
-            Long athleteId, LocalDate startDate, LocalDate endDate);
 }

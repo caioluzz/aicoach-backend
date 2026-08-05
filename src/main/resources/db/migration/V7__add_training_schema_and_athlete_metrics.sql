@@ -20,7 +20,7 @@ CREATE TABLE objectives (
     athlete_id BIGINT NOT NULL,
     title VARCHAR(255) NOT NULL,
     target_date DATE NOT NULL,
-    target_distance_km DOUBLE NOT NULL,
+    target_distance_m INT NOT NULL,
     target_time_minutes INT,
     priority VARCHAR(50) NOT NULL,
     status VARCHAR(50) NOT NULL,
