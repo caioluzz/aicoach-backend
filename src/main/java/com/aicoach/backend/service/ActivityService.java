@@ -31,7 +31,10 @@ public class ActivityService {
         return activityRepo.save(activity);
     }
 
-    @Scheduled(fixedDelay = 60000)
+    @Scheduled(
+            fixedDelayString = "${garmin.sync.fixed-delay-ms:60000}",
+            initialDelayString = "${garmin.sync.initial-delay-ms:60000}"
+    )
     public void dailySyncRoutine() {
         System.out.println("[ActivityService] Iniciando rotina de sincronização automática com a Garmin...");
 
