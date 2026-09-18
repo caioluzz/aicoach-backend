@@ -2,6 +2,7 @@ package com.aicoach.backend.models;
 
 import com.aicoach.backend.enums.Gender;
 import com.aicoach.backend.utils.EncryptionConverter;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.Data;
 
@@ -26,6 +27,7 @@ public class Athlete {
 
     @Column(name = "garmin_password")
     @Convert(converter = EncryptionConverter.class)
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String garminPassword;
 
     @Column(name = "date_of_birth")

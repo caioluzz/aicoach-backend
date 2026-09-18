@@ -5,6 +5,7 @@ import com.aicoach.backend.dto.GarminBotResponseDTO;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -17,6 +18,7 @@ public class GarminBotClient {
     public GarminBotClient(@Value("${garmin.bot.url}") String botUrl) {
         this.restClient = RestClient.builder()
                 .baseUrl(botUrl)
+                .requestFactory(new SimpleClientHttpRequestFactory())
                 .build();
     }
 

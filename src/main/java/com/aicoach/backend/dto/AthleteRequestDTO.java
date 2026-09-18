@@ -33,7 +33,7 @@ public record AthleteRequestDTO(
         @Positive(message = "A altura deve ser maior que zero")
         Integer heightCm,
 
-        @NotBlank(message = "O gênero é obrigatório")
+        @NotNull(message = "O gênero é obrigatório")
         Gender gender,
 
         @NotEmpty(message = "É necessário informar pelo menos um dia de treino na semana")

@@ -47,3 +47,4 @@ Desktop.ini
 *.pem
 application-local.properties
 application-secret.properties
+!.env.example
