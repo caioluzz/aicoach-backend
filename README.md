@@ -9,7 +9,7 @@ microsserviço Garmin. Este repositório é independente do repositório
 - JDK 17
 - Docker com Compose (recomendado) ou MySQL 8 existente
 - microsserviço Garmin em `http://localhost:8000` para sincronizações reais
-- chave da OpenAI para gerar propostas de plano geral
+- chave da OpenAI para gerar propostas de plano geral e semanal
 
 ## Execução local
 
@@ -45,12 +45,17 @@ rotacionadas; esta etapa remove os valores do estado atual, sem reescrever hist�
 | `GET` | `/api/athletes/{id}/season-plans/latest` | Consulta a versão mais recente do plano |
 | `GET` | `/api/athletes/{id}/season-plans` | Consulta o histórico de planos |
 | `POST` | `/api/athletes/{id}/season-plans/{planId}/review` | Aprova ou rejeita um rascunho |
+| `POST` | `/api/athletes/{id}/weekly-plans` | Detalha uma semana de um plano geral aprovado |
+| `GET` | `/api/athletes/{id}/weekly-plans/latest` | Consulta a versão semanal mais recente |
+| `GET` | `/api/athletes/{id}/weekly-plans` | Consulta o histórico de uma semana |
 | `POST` | `/api/v1/activities` | Persiste uma atividade enviada no corpo |
 
 O contrato, as validações e um payload completo estão em
 [`docs/athlete-assessment-api.md`](docs/athlete-assessment-api.md).
 O fluxo, as regras e a integração OpenAI do plano geral estão em
 [`docs/season-plan-api.md`](docs/season-plan-api.md).
+O contrato do treinador semanal, os limites determinísticos e as fronteiras com
+Garmin/adaptação estão em [`docs/weekly-plan-api.md`](docs/weekly-plan-api.md).
 
 Não existe endpoint de login/autenticação do usuário e não há Spring Security
 habilitado. A sincronização é interna: a cada intervalo configurado, o backend
@@ -59,14 +64,16 @@ e, depois disso, persiste atividades posteriores ainda não conhecidas.
 
 ## Persistência mapeada
 
-As migrations V1–V9 criam atleta, credenciais Garmin, resumo de atividade, indicador
+As migrations V1–V10 criam atleta, credenciais Garmin, resumo de atividade, indicador
 de teste VDOT, laps, telemetria e o esquema ainda não usado de planejamento. O fluxo
 atual persiste o resumo recebido do microsserviço e, por cascata JPA, seus laps e
 registros de telemetria. A V8 adiciona snapshots versionados da anamnese,
 disponibilidade por dia, superfícies, equipamentos e histórico de saúde. Nenhum
 cálculo da Etapa 3 depende da IA: o perfil Daniels é calculado pelo motor
 determinístico, e toda proposta OpenAI é novamente validada pelo backend antes de
-ser persistida. A V9 versiona planos, fases, semanas e critérios de revisão.
+ser persistida. A V9 versiona planos, fases, semanas e critérios de revisão. A V10
+cria planos semanais versionados e enriquece sessões, blocos e passos com totais,
+instruções e ritmos Daniels auditáveis.
 
 ## Testes
 
@@ -78,8 +85,9 @@ $env:JAVA_HOME = 'C:\caminho\para\jdk-17'
 Os testes usam H2 em memória, Flyway desabilitado e clientes externos simulados; não
 tocam no MySQL local nem fazem login externo. A primeira auditoria do baseline
 executou as sete migrations com sucesso contra um MySQL 8 local vazio. A suíte cobre
-carga do contexto, atividades, anamnese, motor Daniels e ciclo completo do plano
-geral. A integração OpenAI é testada sem rede e sem consumir tokens.
+carga do contexto, atividades, anamnese, motor Daniels e ciclos completos dos
+planos geral e semanal. A integração OpenAI é testada sem rede e sem consumir
+tokens.
 
 ## Riscos conhecidos
 
@@ -91,5 +99,5 @@ geral. A integração OpenAI é testada sem rede e sem consumir tokens.
 - o método chamado `dailySyncRoutine` roda, por padrão, a cada 60 segundos;
 - não há retry/backoff, endpoint manual de sincronização ou teste automatizado
   das migrations contra MySQL;
-- o plano semanal, a entrega de workouts Garmin e a adaptação pós-treino ainda
-  pertencem às etapas seguintes.
+- a entrega de workouts Garmin e a adaptação pós-treino ainda pertencem às
+  etapas seguintes.

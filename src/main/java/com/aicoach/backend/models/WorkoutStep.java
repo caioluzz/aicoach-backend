@@ -45,4 +45,13 @@ public class WorkoutStep {
     @Enumerated(EnumType.STRING)
     @Column(name = "target_zone", nullable = false)
     private IntensityZone targetZone;
+
+    @Column(name = "target_pace_fastest_sec_per_km")
+    private Integer targetPaceFastestSecondsPerKm;
+
+    @Column(name = "target_pace_slowest_sec_per_km")
+    private Integer targetPaceSlowestSecondsPerKm;
+
+    @Column(length = 500)
+    private String instruction;
 }
