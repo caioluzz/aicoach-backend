@@ -57,6 +57,10 @@ rotacionadas; esta etapa remove os valores do estado atual, sem reescrever hist�
 | `PUT` | `/api/athletes/{id}/weekly-plans/{planId}/garmin/deliveries/{deliveryId}` | Atualiza e reagenda uma sessão |
 | `DELETE` | `/api/athletes/{id}/weekly-plans/{planId}/garmin/deliveries/{deliveryId}` | Cancela uma sessão externa |
 | `POST` | `/api/v1/activities` | Persiste uma atividade enviada no corpo |
+| `POST` | `/api/v1/activities/sync` | Executa a sincronização manual de todos os atletas |
+| `POST` | `/api/v1/activities/sync/{athleteId}` | Executa a sincronização manual de um atleta |
+| `GET` | `/api/v1/activities/sync/status` | Consulta status e contadores da sincronização |
+| `GET` | `/api/v1/activities/sync/status/{athleteId}` | Consulta o status de um atleta |
 
 O contrato, as validações e um payload completo estão em
 [`docs/athlete-assessment-api.md`](docs/athlete-assessment-api.md).
@@ -66,15 +70,16 @@ O contrato do treinador semanal, os limites determinísticos e as fronteiras com
 Garmin/adaptação estão em [`docs/weekly-plan-api.md`](docs/weekly-plan-api.md).
 O fluxo de compilação, idempotência, estados e recuperação da entrega está em
 [`docs/garmin-workout-delivery-api.md`](docs/garmin-workout-delivery-api.md).
+O pipeline de descoberta, checkpoint, retries e importação está em
+[`docs/activity-sync-api.md`](docs/activity-sync-api.md).
 
 Não existe endpoint de login/autenticação do usuário e não há Spring Security
-habilitado. A sincronização é interna: a cada intervalo configurado, o backend
-consulta atletas, busca primeiro um teste cujo nome contenha `Teste 3km` ou `VDOT`
-e, depois disso, persiste atividades posteriores ainda não conhecidas.
+habilitado. A sincronização roda no startup e, por padrão, a cada duas horas. Ela
+descobre metadados com uma janela de recuperação e baixa o FIT apenas de IDs ausentes.
 
 ## Persistência mapeada
 
-As migrations V1–V10 criam atleta, credenciais Garmin, resumo de atividade, indicador
+As migrations V1–V13 criam atleta, credenciais Garmin, resumo de atividade, indicador
 de teste VDOT, laps, telemetria e o esquema ainda não usado de planejamento. O fluxo
 atual persiste o resumo recebido do microsserviço e, por cascata JPA, seus laps e
 registros de telemetria. A V8 adiciona snapshots versionados da anamnese,
@@ -84,7 +89,8 @@ determinístico, e toda proposta OpenAI é novamente validada pelo backend antes
 ser persistida. A V9 versiona planos, fases, semanas e critérios de revisão. A V10
 cria planos semanais versionados e enriquece sessões, blocos e passos com totais,
 instruções e ritmos Daniels auditáveis. A V11 registra revisão e aprovação; a V12
-persiste entrega Garmin, IDs externos, idempotência, tentativas e confirmações.
+persiste entrega Garmin, IDs externos, idempotência, tentativas e confirmações. A V13
+adiciona checkpoint, status e contadores do pipeline de sincronização.
 
 ## Testes
 
@@ -107,8 +113,7 @@ tokens.
 - a criptografia atual usa AES sem modo autenticado e não possui rotação de chave;
 - o e-mail Garmin fica legível no banco e as credenciais são enviadas ao
   microsserviço a cada sincronização;
-- o método chamado `dailySyncRoutine` roda, por padrão, a cada 60 segundos;
-- o pipeline de sincronização de atividades continua sem descoberta eficiente e
-  pertence à Etapa 7;
+- a descoberta é limitada à quantidade configurada; intervalos muito longos sem
+  execução podem exigir ampliar `GARMIN_SYNC_DISCOVERY_LIMIT` temporariamente;
 - a adaptação e análise pós-treino continuam fora desta etapa;
 - a integração Garmin não oficial pode mudar sem aviso e precisa de monitoramento.
