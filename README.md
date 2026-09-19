@@ -36,7 +36,13 @@ rotacionadas; esta etapa remove os valores do estado atual, sem reescrever hist�
 | --- | --- | --- |
 | `POST` | `/api/athletes/new` | Cadastra atleta, credenciais Garmin e objetivos |
 | `GET` | `/api/athletes` | Lista entidades de atleta; não retorna a senha Garmin |
+| `POST` | `/api/athletes/{id}/assessments` | Cria uma versão estruturada da anamnese |
+| `GET` | `/api/athletes/{id}/assessments/latest` | Consulta a anamnese mais recente |
+| `GET` | `/api/athletes/{id}/assessments` | Consulta o histórico versionado da anamnese |
 | `POST` | `/api/v1/activities` | Persiste uma atividade enviada no corpo |
+
+O contrato, as validações e um payload completo estão em
+[`docs/athlete-assessment-api.md`](docs/athlete-assessment-api.md).
 
 Não existe endpoint de login/autenticação do usuário e não há Spring Security
 habilitado. A sincronização é interna: a cada intervalo configurado, o backend
@@ -45,10 +51,12 @@ e, depois disso, persiste atividades posteriores ainda não conhecidas.
 
 ## Persistência mapeada
 
-As migrations V1–V7 criam atleta, credenciais Garmin, resumo de atividade, indicador
+As migrations V1–V8 criam atleta, credenciais Garmin, resumo de atividade, indicador
 de teste VDOT, laps, telemetria e o esquema ainda não usado de planejamento. O fluxo
 atual persiste o resumo recebido do microsserviço e, por cascata JPA, seus laps e
-registros de telemetria. Nenhum cálculo numérico de VDOT é executado nesta versão;
+registros de telemetria. A V8 adiciona snapshots versionados da anamnese,
+disponibilidade por dia, superfícies, equipamentos e histórico de saúde. Nenhum
+cálculo numérico de VDOT é executado nesta versão;
 o sistema apenas identifica e marca a atividade de teste.
 
 ## Testes
