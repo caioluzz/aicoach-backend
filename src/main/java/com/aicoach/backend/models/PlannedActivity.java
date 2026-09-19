@@ -21,6 +21,16 @@ public class PlannedActivity {
     @JoinColumn(name = "training_cycle_id", nullable = false)
     private TrainingCycle trainingCycle;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "weekly_plan_id")
+    private WeeklyPlan weeklyPlan;
+
+    @Column(name = "session_order")
+    private Integer sessionOrder;
+
+    @Column(length = 200)
+    private String name;
+
     // Data em que o treino deve ser executado
     @Column(name = "scheduled_date", nullable = false)
     private LocalDate scheduledDate;
@@ -33,6 +43,12 @@ public class PlannedActivity {
     // Carga calculada desta sessão (para somar no limite do ciclo e validar no LangGraph)
     @Column(name = "calculated_stress_points")
     private Integer calculatedStressPoints;
+
+    @Column(name = "planned_distance_m")
+    private Integer plannedDistanceMeters;
+
+    @Column(name = "planned_duration_s")
+    private Integer plannedDurationSeconds;
 
     // Relacionamento 1:N com os Passos do Treino (os blocos que vão para o relógio Garmin)
     @OneToMany(mappedBy = "plannedActivity", cascade = CascadeType.ALL, orphanRemoval = true)

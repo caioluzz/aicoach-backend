@@ -6,5 +6,6 @@ public enum WorkoutType {
     QUALITY_1,
     QUALITY_2,
     RECOVERY,
+    RACE,
     REST
 }
