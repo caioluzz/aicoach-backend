@@ -1,7 +1,6 @@
 package com.aicoach.backend.service;
 
-import com.aicoach.backend.dto.WeeklyPlanCreateRequest;
-import com.aicoach.backend.dto.WeeklyPlanResponse;
+import com.aicoach.backend.dto.*;
 import com.aicoach.backend.enums.*;
 import com.aicoach.backend.models.*;
 import com.aicoach.backend.repository.*;
@@ -49,12 +48,9 @@ public class WeeklyPlanService {
         WeeklyPlanGenerationResult generated = generator.generate(context);
         WeeklyPlanCalculation calculation = validator.validate(context, generated.proposal());
 
-        int version = weeklyPlanRepo
-                .findTopByAthleteIdAndGlobalPlanIdAndSeasonPlanWeekWeekNumberOrderByVersionDesc(
-                        athleteId, seasonPlan.getId(), week.getWeekNumber())
-                .map(plan -> plan.getVersion() + 1).orElse(1);
+        int version = nextVersion(athleteId, seasonPlan.getId(), week.getWeekNumber());
         WeeklyPlan weeklyPlan = mapPlan(athlete, seasonPlan, week, cycle, assessment, metrics,
-                generated, calculation, version, context);
+                generated, calculation, version, context, "OPENAI");
         return toResponse(weeklyPlanRepo.save(weeklyPlan));
     }
 
@@ -78,6 +74,66 @@ public class WeeklyPlanService {
         ensureAthleteExists(athleteId);
         return weeklyPlanRepo.findByAthleteIdAndGlobalPlanIdAndSeasonPlanWeekWeekNumberOrderByVersionDesc(
                 athleteId, seasonPlanId, weekNumber).stream().map(this::toResponse).toList();
+    }
+
+    @Transactional
+    public WeeklyPlanResponse review(Long athleteId, Long weeklyPlanId, WeeklyPlanReviewRequest request) {
+        WeeklyPlan plan = findOwnedPlan(athleteId, weeklyPlanId);
+        ensureReviewable(plan);
+        plan.setReviewedAt(Instant.now(clock));
+        plan.setReviewComment(blankToNull(request.comment()));
+        if (request.decision() == WeeklyPlanReviewDecision.REJECT) {
+            plan.setStatus(WeeklyPlanStatus.REJECTED);
+        } else {
+            weeklyPlanRepo.findFirstByAthleteIdAndSeasonPlanWeekIdAndStatus(
+                            athleteId, plan.getSeasonPlanWeek().getId(), WeeklyPlanStatus.APPROVED)
+                    .filter(previous -> !previous.getId().equals(plan.getId()))
+                    .ifPresent(previous -> previous.setStatus(WeeklyPlanStatus.SUPERSEDED));
+            plan.setStatus(WeeklyPlanStatus.APPROVED);
+        }
+        return toResponse(plan);
+    }
+
+    @Transactional
+    public WeeklyPlanResponse regenerate(Long athleteId, Long weeklyPlanId, WeeklyPlanRegenerateRequest request) {
+        WeeklyPlan source = findOwnedPlan(athleteId, weeklyPlanId);
+        ensureReviewable(source);
+        WeeklyPlanGenerationContext context = toContext(source.getGlobalPlan(), source.getSeasonPlanWeek(),
+                source.getTrainingCycle(), source.getAssessment(), source.getAthleteMetrics());
+        WeeklyPlanGenerationResult generated = generator.generate(context);
+        WeeklyPlanCalculation calculation = validator.validate(context, generated.proposal());
+        int version = nextVersion(athleteId, source.getGlobalPlan().getId(),
+                source.getSeasonPlanWeek().getWeekNumber());
+        WeeklyPlan replacement = mapPlan(source.getAthlete(), source.getGlobalPlan(), source.getSeasonPlanWeek(),
+                source.getTrainingCycle(), source.getAssessment(), source.getAthleteMetrics(), generated,
+                calculation, version, context, "OPENAI");
+        replacement.setSourceWeeklyPlan(source);
+        source.setStatus(WeeklyPlanStatus.REJECTED);
+        source.setReviewedAt(Instant.now(clock));
+        source.setReviewComment(request.reason().trim());
+        return toResponse(weeklyPlanRepo.save(replacement));
+    }
+
+    @Transactional
+    public WeeklyPlanResponse edit(Long athleteId, Long weeklyPlanId, WeeklyPlanEditRequest request) {
+        WeeklyPlan source = findOwnedPlan(athleteId, weeklyPlanId);
+        ensureReviewable(source);
+        WeeklyPlanGenerationContext context = toContext(source.getGlobalPlan(), source.getSeasonPlanWeek(),
+                source.getTrainingCycle(), source.getAssessment(), source.getAthleteMetrics());
+        WeeklyPlanProposal proposal = toProposal(request);
+        WeeklyPlanCalculation calculation = validator.validate(context, proposal);
+        WeeklyPlanGenerationResult manual = new WeeklyPlanGenerationResult(
+                proposal, null, "manual", null, null, null);
+        int version = nextVersion(athleteId, source.getGlobalPlan().getId(),
+                source.getSeasonPlanWeek().getWeekNumber());
+        WeeklyPlan replacement = mapPlan(source.getAthlete(), source.getGlobalPlan(), source.getSeasonPlanWeek(),
+                source.getTrainingCycle(), source.getAssessment(), source.getAthleteMetrics(), manual,
+                calculation, version, context, "MANUAL");
+        replacement.setSourceWeeklyPlan(source);
+        source.setStatus(WeeklyPlanStatus.REJECTED);
+        source.setReviewedAt(Instant.now(clock));
+        source.setReviewComment(request.reason().trim());
+        return toResponse(weeklyPlanRepo.save(replacement));
     }
 
     private WeeklyPlanGenerationContext toContext(GlobalPlan plan, SeasonPlanWeek week, TrainingCycle cycle,
@@ -121,7 +177,7 @@ public class WeeklyPlanService {
     private WeeklyPlan mapPlan(Athlete athlete, GlobalPlan seasonPlan, SeasonPlanWeek week,
                                TrainingCycle cycle, AthleteAssessment assessment, AthleteMetrics metrics,
                                WeeklyPlanGenerationResult generated, WeeklyPlanCalculation calculation,
-                               int version, WeeklyPlanGenerationContext context) {
+                               int version, WeeklyPlanGenerationContext context, String generationSource) {
         WeeklyPlan plan = new WeeklyPlan();
         plan.setAthlete(athlete);
         plan.setGlobalPlan(seasonPlan);
@@ -130,14 +186,17 @@ public class WeeklyPlanService {
         plan.setAssessment(assessment);
         plan.setAthleteMetrics(metrics);
         plan.setVersion(version);
+        plan.setStatus(WeeklyPlanStatus.VALIDATED);
         plan.setWeekStart(week.getStartDate());
         plan.setWeekEnd(week.getEndDate());
         plan.setTargetVolumeKm(week.getTargetVolumeKm());
         plan.setPlannedDistanceMeters(calculation.totalDistanceMeters());
         plan.setPlannedDurationSeconds(calculation.totalDurationSeconds());
         plan.setSummary(generated.proposal().summary().trim());
-        plan.setCreatedAt(Instant.now(clock));
-        plan.setGenerationSource("OPENAI");
+        Instant now = Instant.now(clock);
+        plan.setCreatedAt(now);
+        plan.setValidatedAt(now);
+        plan.setGenerationSource(generationSource);
         plan.setOpenaiResponseId(generated.responseId());
         plan.setModel(generated.model());
         plan.setInputTokens(generated.inputTokens());
@@ -190,6 +249,7 @@ public class WeeklyPlanService {
             sessions.add(session);
         }
         plan.setSessions(sessions);
+        plan.setValidationMessages(validationMessages(plan));
         return plan;
     }
 
@@ -211,11 +271,17 @@ public class WeeklyPlanService {
 
     private WeeklyPlanResponse toResponse(WeeklyPlan plan) {
         return new WeeklyPlanResponse(plan.getId(), plan.getAthlete().getId(), plan.getGlobalPlan().getId(),
-                plan.getSeasonPlanWeek().getWeekNumber(), plan.getVersion(), plan.getWeekStart(), plan.getWeekEnd(),
+                plan.getSeasonPlanWeek().getWeekNumber(), plan.getVersion(), plan.getStatus(),
+                plan.getSourceWeeklyPlan() == null ? null : plan.getSourceWeeklyPlan().getId(),
+                plan.getWeekStart(), plan.getWeekEnd(),
                 plan.getTargetVolumeKm(), plan.getPlannedDistanceMeters(), plan.getPlannedDurationSeconds(),
-                plan.getSummary(), plan.getCreatedAt(), new WeeklyPlanResponse.Generation(plan.getGenerationSource(),
+                plan.getSummary(), plan.getCreatedAt(), plan.getReviewedAt(), plan.getReviewComment(),
+                new WeeklyPlanResponse.Generation(plan.getGenerationSource(),
                 plan.getOpenaiResponseId(), plan.getModel(), plan.getPromptVersion(), plan.getSchemaVersion(),
                 plan.getInputTokens(), plan.getOutputTokens(), plan.getGenerationLatencyMs()),
+                new WeeklyPlanResponse.Validation(true, plan.getValidatedAt(), plan.getValidatorVersion(),
+                        plan.getValidationMessages().stream().map(item -> new WeeklyPlanResponse.Message(
+                                item.getSeverity(), item.getCode(), item.getMessage())).toList()),
                 plan.getSessions().stream().sorted(Comparator.comparing(PlannedActivity::getSessionOrder))
                         .map(this::toSessionResponse).toList());
     }
@@ -235,5 +301,70 @@ public class WeeklyPlanService {
 
     private void ensureAthleteExists(Long athleteId) {
         if (!athleteRepo.existsById(athleteId)) throw new AthleteNotFoundException(athleteId);
+    }
+
+    private WeeklyPlan findOwnedPlan(Long athleteId, Long weeklyPlanId) {
+        ensureAthleteExists(athleteId);
+        return weeklyPlanRepo.findByIdAndAthleteId(weeklyPlanId, athleteId)
+                .orElseThrow(() -> new WeeklyPlanNotFoundException(weeklyPlanId));
+    }
+
+    private void ensureReviewable(WeeklyPlan plan) {
+        if (plan.getStatus() != WeeklyPlanStatus.VALIDATED) {
+            throw new WeeklyPlanStateException("Somente um plano validado e pendente pode ser revisado");
+        }
+    }
+
+    private int nextVersion(Long athleteId, Long seasonPlanId, Integer weekNumber) {
+        return weeklyPlanRepo.findTopByAthleteIdAndGlobalPlanIdAndSeasonPlanWeekWeekNumberOrderByVersionDesc(
+                        athleteId, seasonPlanId, weekNumber)
+                .map(plan -> plan.getVersion() + 1).orElse(1);
+    }
+
+    private WeeklyPlanProposal toProposal(WeeklyPlanEditRequest request) {
+        return new WeeklyPlanProposal(request.summary().trim(), request.sessions().stream().map(session ->
+                new WeeklyPlanProposal.Session(session.order(), session.name().trim(), session.scheduledDate(),
+                        session.workoutType(), session.blocks().stream().map(block ->
+                        new WeeklyPlanProposal.Block(block.repetitions(), block.steps().stream().map(step ->
+                                new WeeklyPlanProposal.Step(
+                                        com.aicoach.backend.training.workout.WorkoutStepDefinition.Kind.valueOf(
+                                                step.kind().name()),
+                                        step.durationType(), step.durationValue(), toDanielsIntensity(step.targetZone()),
+                                        step.instruction().trim())).toList())).toList())).toList());
+    }
+
+    private DanielsIntensity toDanielsIntensity(IntensityZone zone) {
+        return switch (zone) {
+            case E_PACE -> DanielsIntensity.E;
+            case M_PACE -> DanielsIntensity.M;
+            case T_PACE -> DanielsIntensity.T;
+            case I_PACE -> DanielsIntensity.I;
+            case R_PACE -> DanielsIntensity.R;
+            case REST -> throw new WeeklyPlanValidationException(
+                    List.of("REST não é uma zona-alvo válida para um passo de corrida"));
+        };
+    }
+
+    private List<WeeklyPlanValidationMessage> validationMessages(WeeklyPlan plan) {
+        return new ArrayList<>(List.of(
+                validationMessage(plan, "AVAILABILITY", "Disponibilidade e recuperação validadas"),
+                validationMessage(plan, "DANIELS", "Estrutura, intensidades e recuperações Daniels validadas"),
+                validationMessage(plan, "HEALTH", "Restrições de saúde aplicadas"),
+                validationMessage(plan, "LOAD", "Volume e distribuição de carga validados"),
+                validationMessage(plan, "STRUCTURE", "Sessões, blocos e passos validados")
+        ));
+    }
+
+    private WeeklyPlanValidationMessage validationMessage(WeeklyPlan plan, String code, String message) {
+        WeeklyPlanValidationMessage item = new WeeklyPlanValidationMessage();
+        item.setWeeklyPlan(plan);
+        item.setSeverity(ValidationSeverity.INFO);
+        item.setCode(code);
+        item.setMessage(message);
+        return item;
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }

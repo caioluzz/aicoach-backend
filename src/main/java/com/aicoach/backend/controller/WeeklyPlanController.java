@@ -1,8 +1,7 @@
 package com.aicoach.backend.controller;
 
 import com.aicoach.backend.api.WeeklyPlanApi;
-import com.aicoach.backend.dto.WeeklyPlanCreateRequest;
-import com.aicoach.backend.dto.WeeklyPlanResponse;
+import com.aicoach.backend.dto.*;
 import com.aicoach.backend.service.WeeklyPlanService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RestController;
@@ -28,5 +27,17 @@ public class WeeklyPlanController implements WeeklyPlanApi {
 
     public List<WeeklyPlanResponse> getHistory(Long athleteId, Long seasonPlanId, Integer weekNumber) {
         return service.getHistory(athleteId, seasonPlanId, weekNumber);
+    }
+
+    public WeeklyPlanResponse review(Long athleteId, Long weeklyPlanId, WeeklyPlanReviewRequest request) {
+        return service.review(athleteId, weeklyPlanId, request);
+    }
+
+    public WeeklyPlanResponse regenerate(Long athleteId, Long weeklyPlanId, WeeklyPlanRegenerateRequest request) {
+        return service.regenerate(athleteId, weeklyPlanId, request);
+    }
+
+    public WeeklyPlanResponse edit(Long athleteId, Long weeklyPlanId, WeeklyPlanEditRequest request) {
+        return service.edit(athleteId, weeklyPlanId, request);
     }
 }

@@ -1,5 +1,6 @@
 package com.aicoach.backend.models;
 
+import com.aicoach.backend.enums.WeeklyPlanStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -18,6 +19,7 @@ import java.util.List;
 public class WeeklyPlan {
     public static final String CURRENT_PROMPT_VERSION = "weekly-plan-1.0";
     public static final String CURRENT_SCHEMA_VERSION = "1.0";
+    public static final String CURRENT_VALIDATOR_VERSION = "weekly-plan-validator-1.0";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -50,6 +52,14 @@ public class WeeklyPlan {
     @Column(nullable = false)
     private Integer version;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private WeeklyPlanStatus status;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "source_weekly_plan_id")
+    private WeeklyPlan sourceWeeklyPlan;
+
     @Column(name = "week_start", nullable = false)
     private LocalDate weekStart;
 
@@ -70,6 +80,18 @@ public class WeeklyPlan {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    @Column(name = "validated_at", nullable = false, updatable = false)
+    private Instant validatedAt;
+
+    @Column(name = "validator_version", nullable = false, length = 40)
+    private String validatorVersion = CURRENT_VALIDATOR_VERSION;
+
+    @Column(name = "reviewed_at")
+    private Instant reviewedAt;
+
+    @Column(name = "review_comment", length = 1000)
+    private String reviewComment;
 
     @Column(name = "generation_source", nullable = false, length = 20)
     private String generationSource;
@@ -99,8 +121,13 @@ public class WeeklyPlan {
     @OrderBy("sessionOrder ASC")
     private List<PlannedActivity> sessions = new ArrayList<>();
 
+    @OneToMany(mappedBy = "weeklyPlan", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("code ASC")
+    private List<WeeklyPlanValidationMessage> validationMessages = new ArrayList<>();
+
     @PrePersist
     void initializeCreatedAt() {
         if (createdAt == null) createdAt = Instant.now();
+        if (validatedAt == null) validatedAt = createdAt;
     }
 }
