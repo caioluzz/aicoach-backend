@@ -1,6 +1,7 @@
 package com.aicoach.backend.controller;
 
 import com.aicoach.backend.dto.*;
+import com.aicoach.backend.service.GarminWorkoutDeliveryService;
 import com.aicoach.backend.service.WeeklyPlanService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,17 +11,20 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class WeeklyPlanControllerTest {
     private WeeklyPlanService service;
+    private GarminWorkoutDeliveryService garminDeliveryService;
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
         service = mock(WeeklyPlanService.class);
-        mvc = MockMvcBuilders.standaloneSetup(new WeeklyPlanController(service)).build();
+        garminDeliveryService = mock(GarminWorkoutDeliveryService.class);
+        mvc = MockMvcBuilders.standaloneSetup(
+                new WeeklyPlanController(service, garminDeliveryService)).build();
     }
 
     @Test
@@ -69,5 +73,25 @@ class WeeklyPlanControllerTest {
                         .content("{\"reason\":\" \"}"))
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(service);
+    }
+
+    @Test
+    void exposesGarminPreviewDeliveryConfirmationUpdateAndCancellation() throws Exception {
+        mvc.perform(get("/api/athletes/7/weekly-plans/31/garmin/preview"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/athletes/7/weekly-plans/31/garmin/deliveries"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/athletes/7/weekly-plans/31/garmin/confirmations"))
+                .andExpect(status().isOk());
+        mvc.perform(put("/api/athletes/7/weekly-plans/31/garmin/deliveries/91"))
+                .andExpect(status().isOk());
+        mvc.perform(delete("/api/athletes/7/weekly-plans/31/garmin/deliveries/91"))
+                .andExpect(status().isOk());
+
+        verify(garminDeliveryService).preview(7L, 31L);
+        verify(garminDeliveryService).deliver(7L, 31L);
+        verify(garminDeliveryService).confirm(7L, 31L);
+        verify(garminDeliveryService).update(7L, 31L, 91L);
+        verify(garminDeliveryService).cancel(7L, 31L, 91L);
     }
 }
