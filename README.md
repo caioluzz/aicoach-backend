@@ -48,6 +48,9 @@ rotacionadas; esta etapa remove os valores do estado atual, sem reescrever hist�
 | `POST` | `/api/athletes/{id}/weekly-plans` | Detalha uma semana de um plano geral aprovado |
 | `GET` | `/api/athletes/{id}/weekly-plans/latest` | Consulta a versão semanal mais recente |
 | `GET` | `/api/athletes/{id}/weekly-plans` | Consulta o histórico de uma semana |
+| `POST` | `/api/athletes/{id}/weekly-plans/{planId}/review` | Aprova ou rejeita uma versão validada |
+| `POST` | `/api/athletes/{id}/weekly-plans/{planId}/regenerate` | Rejeita a versão e solicita nova proposta |
+| `POST` | `/api/athletes/{id}/weekly-plans/{planId}/edits` | Cria uma versão manual validada |
 | `POST` | `/api/v1/activities` | Persiste uma atividade enviada no corpo |
 
 O contrato, as validações e um payload completo estão em
