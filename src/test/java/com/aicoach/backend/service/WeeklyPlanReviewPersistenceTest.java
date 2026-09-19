@@ -1,7 +1,6 @@
 package com.aicoach.backend.service;
 
-import com.aicoach.backend.dto.WeeklyPlanCreateRequest;
-import com.aicoach.backend.dto.WeeklyPlanResponse;
+import com.aicoach.backend.dto.*;
 import com.aicoach.backend.enums.*;
 import com.aicoach.backend.models.*;
 import com.aicoach.backend.repository.*;
@@ -19,11 +18,11 @@ import java.util.ArrayList;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @Transactional
-class WeeklyPlanPersistenceTest {
+class WeeklyPlanReviewPersistenceTest {
     @Autowired AthleteRepo athleteRepo;
     @Autowired ObjectiveRepo objectiveRepo;
     @Autowired AthleteAssessmentRepo assessmentRepo;
@@ -40,7 +39,7 @@ class WeeklyPlanPersistenceTest {
     @BeforeEach
     void prepareApprovedSeasonPlan() {
         athlete = new Athlete();
-        athlete.setName("Runner");
+        athlete.setName("Runner review");
         athlete = athleteRepo.saveAndFlush(athlete);
         assessmentService.createVersion(athlete.getId(),
                 AthleteAssessmentServiceTest.validRequest(DayOfWeek.SUNDAY));
@@ -113,38 +112,88 @@ class WeeklyPlanPersistenceTest {
         when(generator.generate(any())).thenAnswer(invocation -> {
             WeeklyPlanGenerationContext context = invocation.getArgument(0);
             return new WeeklyPlanGenerationResult(WeeklyPlanFixtures.validProposal(context),
-                    "resp_week", "gpt-test", 80, 160, 250L);
+                    "resp_review", "gpt-test", 80, 160, 250L);
         });
     }
 
     @Test
-    void persistsNestedWorkoutsAndVersionsWithoutGarminState() {
-        WeeklyPlanCreateRequest request = new WeeklyPlanCreateRequest(seasonPlan.getId(), 1);
-        WeeklyPlanResponse first = weeklyPlanService.create(athlete.getId(), request);
-        WeeklyPlanResponse second = weeklyPlanService.create(athlete.getId(), request);
+    void approvesOneVersionAndSupersedesPreviouslyApprovedVersion() {
+        WeeklyPlanResponse first = create();
+        first = weeklyPlanService.review(athlete.getId(), first.id(),
+                new WeeklyPlanReviewRequest(WeeklyPlanReviewDecision.APPROVE, "Aprovado"));
+        WeeklyPlanResponse second = create();
+        second = weeklyPlanService.review(athlete.getId(), second.id(),
+                new WeeklyPlanReviewRequest(WeeklyPlanReviewDecision.APPROVE, null));
 
-        assertEquals(1, first.version());
-        assertEquals(2, second.version());
-        assertEquals(WeeklyPlanStatus.VALIDATED, first.status());
-        assertTrue(first.validation().valid());
-        assertEquals(5, first.validation().messages().size());
-        assertEquals(15_000, first.plannedDistanceMeters());
-        assertEquals(2, first.sessions().size());
-        assertEquals(330, first.sessions().get(0).blocks().get(0).steps().get(0)
-                .targetPaceFastestSecondsPerKm());
-        assertEquals("resp_week", first.generation().responseId());
-        assertEquals(2, weeklyPlanService.getHistory(athlete.getId(), seasonPlan.getId(), 1).size());
-        assertEquals(2, weeklyPlanService.getLatest(athlete.getId(), seasonPlan.getId(), 1).version());
+        assertEquals(WeeklyPlanStatus.APPROVED, second.status());
+        assertEquals(WeeklyPlanStatus.SUPERSEDED,
+                weeklyPlanRepo.findById(first.id()).orElseThrow().getStatus());
+        Long approvedId = second.id();
+        assertThrows(WeeklyPlanStateException.class, () -> weeklyPlanService.review(
+                athlete.getId(), approvedId,
+                new WeeklyPlanReviewRequest(WeeklyPlanReviewDecision.REJECT, null)));
     }
 
     @Test
-    void rejectsSeasonPlanThatIsNotApprovedBeforeCallingOpenAi() {
-        seasonPlan.setStatus(SeasonPlanStatus.DRAFT);
-        seasonPlanRepo.saveAndFlush(seasonPlan);
+    void requestsNewProposalWithoutMutatingTheOriginalContents() {
+        WeeklyPlanResponse first = create();
+        WeeklyPlanResponse replacement = weeklyPlanService.regenerate(athlete.getId(), first.id(),
+                new WeeklyPlanRegenerateRequest("Trocar o dia do treino de qualidade"));
 
-        assertThrows(WeeklyPlanPrerequisiteException.class, () -> weeklyPlanService.create(
-                athlete.getId(), new WeeklyPlanCreateRequest(seasonPlan.getId(), 1)));
-        verifyNoInteractions(generator);
-        assertEquals(0, weeklyPlanRepo.count());
+        WeeklyPlan original = weeklyPlanRepo.findById(first.id()).orElseThrow();
+        assertEquals(WeeklyPlanStatus.REJECTED, original.getStatus());
+        assertEquals("Trocar o dia do treino de qualidade", original.getReviewComment());
+        assertEquals(2, replacement.version());
+        assertEquals(first.id(), replacement.sourceWeeklyPlanId());
+        assertEquals(WeeklyPlanStatus.VALIDATED, replacement.status());
+        assertEquals(first.sessions(), weeklyPlanService.get(athlete.getId(), first.id()).sessions());
+    }
+
+    @Test
+    void createsValidatedManualVersionAndRecalculatesProtectedFields() {
+        WeeklyPlanResponse first = create();
+        WeeklyPlanEditRequest edit = toEdit(first, "Ajuste manual revisado");
+        WeeklyPlanResponse replacement = weeklyPlanService.edit(athlete.getId(), first.id(), edit);
+
+        assertEquals(2, replacement.version());
+        assertEquals("MANUAL", replacement.generation().source());
+        assertEquals("manual", replacement.generation().model());
+        assertNull(replacement.generation().responseId());
+        assertEquals(first.plannedDistanceMeters(), replacement.plannedDistanceMeters());
+        assertEquals(330, replacement.sessions().get(0).blocks().get(0).steps().get(0)
+                .targetPaceFastestSecondsPerKm());
+        assertEquals(WeeklyPlanStatus.REJECTED,
+                weeklyPlanRepo.findById(first.id()).orElseThrow().getStatus());
+    }
+
+    @Test
+    void rejectsInvalidManualEditAndKeepsSourcePending() {
+        WeeklyPlanResponse first = create();
+        WeeklyPlanEditRequest valid = toEdit(first, "Data inválida para teste");
+        var session = valid.sessions().get(0);
+        var invalidSession = new WeeklyPlanEditRequest.Session(session.order(), session.name(),
+                first.weekEnd().plusDays(1), session.workoutType(), session.blocks());
+        var sessions = new ArrayList<>(valid.sessions());
+        sessions.set(0, invalidSession);
+        WeeklyPlanEditRequest invalid = new WeeklyPlanEditRequest(valid.summary(), sessions, valid.reason());
+
+        assertThrows(WeeklyPlanValidationException.class,
+                () -> weeklyPlanService.edit(athlete.getId(), first.id(), invalid));
+        assertEquals(WeeklyPlanStatus.VALIDATED,
+                weeklyPlanRepo.findById(first.id()).orElseThrow().getStatus());
+        assertEquals(1, weeklyPlanRepo.count());
+    }
+
+    private WeeklyPlanResponse create() {
+        return weeklyPlanService.create(athlete.getId(), new WeeklyPlanCreateRequest(seasonPlan.getId(), 1));
+    }
+
+    private WeeklyPlanEditRequest toEdit(WeeklyPlanResponse response, String reason) {
+        return new WeeklyPlanEditRequest(response.summary(), response.sessions().stream().map(session ->
+                new WeeklyPlanEditRequest.Session(session.order(), session.name(), session.scheduledDate(),
+                        session.workoutType(), session.blocks().stream().map(block ->
+                        new WeeklyPlanEditRequest.Block(block.repetitions(), block.steps().stream().map(step ->
+                                new WeeklyPlanEditRequest.Step(step.kind(), step.durationType(), step.durationValue(),
+                                        step.targetZone(), step.instruction())).toList())).toList())).toList(), reason);
     }
 }
