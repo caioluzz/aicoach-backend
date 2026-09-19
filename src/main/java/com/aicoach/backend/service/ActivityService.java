@@ -37,6 +37,7 @@ public class ActivityService {
     private final AthleteRepo athleteRepo;
     private final ActivitySyncStateRepo syncStateRepo;
     private final GarminBotClient garminBotClient;
+    private final ActivityComparisonService activityComparisonService;
     private final AtomicBoolean allAthletesSyncRunning = new AtomicBoolean(false);
     private final Set<Long> activeAthleteSyncs = ConcurrentHashMap.newKeySet();
 
@@ -55,7 +56,9 @@ public class ActivityService {
                 && activityRepo.existsByGarminActivityId(activity.getGarminActivityId())) {
             throw new IllegalArgumentException("Atividade do Garmin já registrada no sistema.");
         }
-        return activityRepo.save(activity);
+        Activity saved = activityRepo.saveAndFlush(activity);
+        compareIfRunning(saved);
+        return saved;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -132,6 +135,10 @@ public class ActivityService {
             List<Long> failedActivityIds = new ArrayList<>();
             for (GarminActivityMetadata metadata : discovered) {
                 if (activityRepo.existsByGarminActivityId(metadata.activityId())) {
+                    activityRepo.findByGarminActivityId(metadata.activityId())
+                            .filter(this::isRunning)
+                            .filter(activity -> !activityComparisonService.hasComparison(activity.getId()))
+                            .ifPresent(this::compareIfRunning);
                     skipped++;
                     continue;
                 }
@@ -145,7 +152,8 @@ public class ActivityService {
                         throw new IllegalStateException("Resposta Garmin não corresponde à atividade solicitada");
                     }
                     if (!activityRepo.existsByGarminActivityId(metadata.activityId())) {
-                        activityRepo.saveAndFlush(mapToEntity(detail, athlete));
+                        Activity importedActivity = activityRepo.saveAndFlush(mapToEntity(detail, athlete));
+                        compareIfRunning(importedActivity);
                         imported++;
                     } else {
                         skipped++;
@@ -307,5 +315,19 @@ public class ActivityService {
             });
         }
         return activity;
+    }
+
+    private void compareIfRunning(Activity activity) {
+        if (!isRunning(activity)) return;
+        try {
+            activityComparisonService.compareActivity(activity.getId());
+        } catch (RuntimeException exception) {
+            log.warn("activity_comparison activity_id={} status=failed error_type={}",
+                    activity.getId(), exception.getClass().getSimpleName());
+        }
+    }
+
+    private boolean isRunning(Activity activity) {
+        return activity.getSport() != null && activity.getSport().toLowerCase().contains("run");
     }
 }

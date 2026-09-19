@@ -2,12 +2,16 @@ package com.aicoach.backend.api;
 
 import com.aicoach.backend.models.Activity;
 import com.aicoach.backend.dto.ActivitySyncResponse;
+import com.aicoach.backend.dto.ActivityComparisonResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+
+import java.time.LocalDate;
 
 import java.util.List;
 
@@ -28,4 +32,17 @@ public interface ActivityApi {
 
     @GetMapping("/sync/status/{athleteId}")
     ResponseEntity<ActivitySyncResponse> getSyncStatus(@PathVariable Long athleteId);
+
+    @PostMapping("/{activityId}/comparison")
+    ResponseEntity<ActivityComparisonResponse> compareActivity(@PathVariable Long activityId);
+
+    @GetMapping("/{activityId}/comparison")
+    ResponseEntity<ActivityComparisonResponse> getComparison(@PathVariable Long activityId);
+
+    @GetMapping("/comparisons/athletes/{athleteId}")
+    ResponseEntity<List<ActivityComparisonResponse>> listComparisons(@PathVariable Long athleteId);
+
+    @PostMapping("/comparisons/athletes/{athleteId}/reconcile")
+    ResponseEntity<List<ActivityComparisonResponse>> reconcileComparisons(
+            @PathVariable Long athleteId, @RequestParam(required = false) LocalDate throughDate);
 }

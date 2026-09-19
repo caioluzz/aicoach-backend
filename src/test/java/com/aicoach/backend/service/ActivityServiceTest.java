@@ -33,6 +33,7 @@ class ActivityServiceTest {
     @Mock AthleteRepo athleteRepo;
     @Mock ActivitySyncStateRepo syncStateRepo;
     @Mock GarminBotClient garminBotClient;
+    @Mock ActivityComparisonService activityComparisonService;
     @InjectMocks ActivityService activityService;
 
     private Athlete athlete;
