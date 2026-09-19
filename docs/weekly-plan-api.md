@@ -128,6 +128,9 @@ Estados persistidos:
 - `SUPERSEDED`: aprovação anterior substituída por uma versão nova;
 - `DELIVERED`: reservado à confirmação de entrega da Etapa 6.
 
+A Etapa 6 implementa essa transição somente depois de confirmar todas as sessões
+no calendário. Consulte [`garmin-workout-delivery-api.md`](garmin-workout-delivery-api.md).
+
 `reviewedAt` e `reviewComment` registram a decisão sem alterar o conteúdo do
 treino.
 
