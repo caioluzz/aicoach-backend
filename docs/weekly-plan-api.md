@@ -42,12 +42,22 @@ sessão -> bloco repetível -> passo:
   "seasonPlanId": 21,
   "seasonPlanWeekNumber": 4,
   "version": 1,
+  "status": "VALIDATED",
+  "sourceWeeklyPlanId": null,
   "weekStart": "2026-10-05",
   "weekEnd": "2026-10-11",
   "targetVolumeKm": 40.0,
   "plannedDistanceMeters": 39850,
   "plannedDurationSeconds": 12740,
   "summary": "Semana de consolidação com um estímulo T.",
+  "validation": {
+    "valid": true,
+    "validatedAt": "2026-09-19T14:00:00Z",
+    "validatorVersion": "weekly-plan-validator-1.0",
+    "messages": [
+      {"severity":"INFO","code":"LOAD","message":"Volume e distribuição de carga validados"}
+    ]
+  },
   "sessions": [
     {
       "order": 1,
@@ -91,6 +101,103 @@ GET /api/athletes/{athleteId}/weekly-plans?seasonPlanId=21&weekNumber=4
 ```
 
 Cada nova geração acrescenta uma versão. Versões anteriores não são alteradas.
+
+## Revisão e aprovação
+
+Toda proposta que passa pelo validador determinístico é persistida em
+`VALIDATED`. A revisão aceita apenas versões nesse estado:
+
+```http
+POST /api/athletes/7/weekly-plans/31/review
+Content-Type: application/json
+
+{"decision":"APPROVE","comment":"Semana revisada"}
+```
+
+As decisões são `APPROVE` e `REJECT`. Aprovar uma versão marca como
+`SUPERSEDED` outra versão aprovada da mesma semana. Rejeitar resulta em
+`REJECTED`. Repetir uma decisão ou revisar versão fora de `VALIDATED` retorna
+`409 Conflict`.
+
+Estados persistidos:
+
+- `DRAFT`: reservado a fluxos de rascunho que ainda não passaram pelo validador;
+- `VALIDATED`: pronta para revisão humana;
+- `APPROVED`: único estado elegível para entrega ao Garmin na Etapa 6;
+- `REJECTED`: rejeitada diretamente ou substituída por uma solicitação;
+- `SUPERSEDED`: aprovação anterior substituída por uma versão nova;
+- `DELIVERED`: reservado à confirmação de entrega da Etapa 6.
+
+`reviewedAt` e `reviewComment` registram a decisão sem alterar o conteúdo do
+treino.
+
+## Solicitar nova proposta
+
+```http
+POST /api/athletes/7/weekly-plans/31/regenerate
+Content-Type: application/json
+
+{"reason":"Mover o treino de qualidade para quinta-feira"}
+```
+
+O motivo é obrigatório. O backend reusa os snapshots do plano geral, anamnese e
+perfil Daniels da versão original, chama o gerador, valida a resposta inteira e
+cria uma nova versão `VALIDATED`. A anterior passa a `REJECTED`; a nova informa
+o id anterior em `sourceWeeklyPlanId`. Se geração ou validação falhar, a
+transação mantém a versão original inalterada.
+
+## Edição manual controlada
+
+```http
+POST /api/athletes/7/weekly-plans/31/edits
+Content-Type: application/json
+
+{
+  "summary": "Semana ajustada manualmente.",
+  "reason": "Compromisso na quarta-feira",
+  "sessions": [
+    {
+      "order": 1,
+      "name": "Rodagem fácil",
+      "scheduledDate": "2026-10-06",
+      "workoutType": "EASY_RUN",
+      "blocks": [
+        {
+          "repetitions": 1,
+          "steps": [
+            {
+              "kind": "WORK",
+              "durationType": "DISTANCE",
+              "durationValue": 8000,
+              "targetZone": "E_PACE",
+              "instruction": "Ritmo confortável"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+Resumo, motivo e hierarquia neutra são obrigatórios e limitados em tamanho. O
+cliente não envia ritmos, totais, estado nem metadados de geração. O backend
+deriva ritmos do snapshot Daniels, recalcula distância, duração e carga e aplica
+todas as regras da geração automática. Uma edição válida cria nova versão com
+`generation.source = MANUAL`; uma edição inválida retorna `422` sem modificar a
+origem.
+
+## Validações e alertas
+
+A resposta expõe o snapshot auditável em `validation`. Cada mensagem possui
+`severity` (`INFO` ou `WARNING`), `code` estável e texto legível. A versão atual
+registra as categorias aprovadas pelo validador; propostas com violações não
+são persistidas e retornam `422` com as violações. Alertas futuros poderão ser
+adicionados como `WARNING` sem alterar o contrato.
+
+Todas as operações verificam que plano e atleta pertencem ao mesmo agregado.
+Comentários e instruções não podem conter credenciais e não são enviados ao
+Garmin nesta etapa.
 
 ## Validação anterior ao `save`
 

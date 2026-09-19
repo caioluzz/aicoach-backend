@@ -1,5 +1,6 @@
 package com.aicoach.backend.repository;
 
+import com.aicoach.backend.enums.WeeklyPlanStatus;
 import com.aicoach.backend.models.WeeklyPlan;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -12,4 +13,6 @@ public interface WeeklyPlanRepo extends JpaRepository<WeeklyPlan, Long> {
             Long athleteId, Long globalPlanId, Integer weekNumber);
     List<WeeklyPlan> findByAthleteIdAndGlobalPlanIdAndSeasonPlanWeekWeekNumberOrderByVersionDesc(
             Long athleteId, Long globalPlanId, Integer weekNumber);
+    Optional<WeeklyPlan> findFirstByAthleteIdAndSeasonPlanWeekIdAndStatus(
+            Long athleteId, Long seasonPlanWeekId, WeeklyPlanStatus status);
 }
