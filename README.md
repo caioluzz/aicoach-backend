@@ -51,6 +51,11 @@ rotacionadas; esta etapa remove os valores do estado atual, sem reescrever hist�
 | `POST` | `/api/athletes/{id}/weekly-plans/{planId}/review` | Aprova ou rejeita uma versão validada |
 | `POST` | `/api/athletes/{id}/weekly-plans/{planId}/regenerate` | Rejeita a versão e solicita nova proposta |
 | `POST` | `/api/athletes/{id}/weekly-plans/{planId}/edits` | Cria uma versão manual validada |
+| `GET` | `/api/athletes/{id}/weekly-plans/{planId}/garmin/preview` | Pré-visualiza a compilação Garmin |
+| `POST` | `/api/athletes/{id}/weekly-plans/{planId}/garmin/deliveries` | Envia e agenda a semana aprovada |
+| `POST` | `/api/athletes/{id}/weekly-plans/{planId}/garmin/confirmations` | Confirma a semana no calendário |
+| `PUT` | `/api/athletes/{id}/weekly-plans/{planId}/garmin/deliveries/{deliveryId}` | Atualiza e reagenda uma sessão |
+| `DELETE` | `/api/athletes/{id}/weekly-plans/{planId}/garmin/deliveries/{deliveryId}` | Cancela uma sessão externa |
 | `POST` | `/api/v1/activities` | Persiste uma atividade enviada no corpo |
 
 O contrato, as validações e um payload completo estão em
@@ -59,6 +64,8 @@ O fluxo, as regras e a integração OpenAI do plano geral estão em
 [`docs/season-plan-api.md`](docs/season-plan-api.md).
 O contrato do treinador semanal, os limites determinísticos e as fronteiras com
 Garmin/adaptação estão em [`docs/weekly-plan-api.md`](docs/weekly-plan-api.md).
+O fluxo de compilação, idempotência, estados e recuperação da entrega está em
+[`docs/garmin-workout-delivery-api.md`](docs/garmin-workout-delivery-api.md).
 
 Não existe endpoint de login/autenticação do usuário e não há Spring Security
 habilitado. A sincronização é interna: a cada intervalo configurado, o backend
@@ -76,7 +83,8 @@ cálculo da Etapa 3 depende da IA: o perfil Daniels é calculado pelo motor
 determinístico, e toda proposta OpenAI é novamente validada pelo backend antes de
 ser persistida. A V9 versiona planos, fases, semanas e critérios de revisão. A V10
 cria planos semanais versionados e enriquece sessões, blocos e passos com totais,
-instruções e ritmos Daniels auditáveis.
+instruções e ritmos Daniels auditáveis. A V11 registra revisão e aprovação; a V12
+persiste entrega Garmin, IDs externos, idempotência, tentativas e confirmações.
 
 ## Testes
 
@@ -100,7 +108,7 @@ tokens.
 - o e-mail Garmin fica legível no banco e as credenciais são enviadas ao
   microsserviço a cada sincronização;
 - o método chamado `dailySyncRoutine` roda, por padrão, a cada 60 segundos;
-- não há retry/backoff, endpoint manual de sincronização ou teste automatizado
-  das migrations contra MySQL;
-- a entrega de workouts Garmin e a adaptação pós-treino ainda pertencem às
-  etapas seguintes.
+- o pipeline de sincronização de atividades continua sem descoberta eficiente e
+  pertence à Etapa 7;
+- a adaptação e análise pós-treino continuam fora desta etapa;
+- a integração Garmin não oficial pode mudar sem aviso e precisa de monitoramento.

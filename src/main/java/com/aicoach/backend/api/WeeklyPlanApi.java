@@ -37,4 +37,21 @@ public interface WeeklyPlanApi {
     @ResponseStatus(HttpStatus.CREATED)
     WeeklyPlanResponse edit(@PathVariable Long athleteId, @PathVariable Long weeklyPlanId,
                             @Valid @RequestBody WeeklyPlanEditRequest request);
+
+    @GetMapping("/{weeklyPlanId}/garmin/preview")
+    GarminPreviewResponse previewGarmin(@PathVariable Long athleteId, @PathVariable Long weeklyPlanId);
+
+    @PostMapping("/{weeklyPlanId}/garmin/deliveries")
+    GarminDeliveryResponse deliverGarmin(@PathVariable Long athleteId, @PathVariable Long weeklyPlanId);
+
+    @PostMapping("/{weeklyPlanId}/garmin/confirmations")
+    GarminDeliveryResponse confirmGarmin(@PathVariable Long athleteId, @PathVariable Long weeklyPlanId);
+
+    @PutMapping("/{weeklyPlanId}/garmin/deliveries/{deliveryId}")
+    GarminDeliveryResponse updateGarmin(@PathVariable Long athleteId, @PathVariable Long weeklyPlanId,
+                                        @PathVariable Long deliveryId);
+
+    @DeleteMapping("/{weeklyPlanId}/garmin/deliveries/{deliveryId}")
+    GarminDeliveryResponse cancelGarmin(@PathVariable Long athleteId, @PathVariable Long weeklyPlanId,
+                                        @PathVariable Long deliveryId);
 }
