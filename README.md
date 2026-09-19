@@ -9,6 +9,7 @@ microsserviço Garmin. Este repositório é independente do repositório
 - JDK 17
 - Docker com Compose (recomendado) ou MySQL 8 existente
 - microsserviço Garmin em `http://localhost:8000` para sincronizações reais
+- chave da OpenAI para gerar propostas de plano geral
 
 ## Execução local
 
@@ -21,6 +22,7 @@ $env:DB_PASSWORD = 'senha-local-do-mysql'
 $env:GARMIN_ENCRYPTION_KEY = [Convert]::ToBase64String(
   [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
 )
+$env:OPENAI_API_KEY = 'chave-local-da-openai'
 docker compose up -d
 .\mvnw.cmd spring-boot:run
 ```
@@ -39,10 +41,16 @@ rotacionadas; esta etapa remove os valores do estado atual, sem reescrever hist�
 | `POST` | `/api/athletes/{id}/assessments` | Cria uma versão estruturada da anamnese |
 | `GET` | `/api/athletes/{id}/assessments/latest` | Consulta a anamnese mais recente |
 | `GET` | `/api/athletes/{id}/assessments` | Consulta o histórico versionado da anamnese |
+| `POST` | `/api/athletes/{id}/season-plans` | Gera e valida uma proposta de plano geral |
+| `GET` | `/api/athletes/{id}/season-plans/latest` | Consulta a versão mais recente do plano |
+| `GET` | `/api/athletes/{id}/season-plans` | Consulta o histórico de planos |
+| `POST` | `/api/athletes/{id}/season-plans/{planId}/review` | Aprova ou rejeita um rascunho |
 | `POST` | `/api/v1/activities` | Persiste uma atividade enviada no corpo |
 
 O contrato, as validações e um payload completo estão em
 [`docs/athlete-assessment-api.md`](docs/athlete-assessment-api.md).
+O fluxo, as regras e a integração OpenAI do plano geral estão em
+[`docs/season-plan-api.md`](docs/season-plan-api.md).
 
 Não existe endpoint de login/autenticação do usuário e não há Spring Security
 habilitado. A sincronização é interna: a cada intervalo configurado, o backend
@@ -51,13 +59,14 @@ e, depois disso, persiste atividades posteriores ainda não conhecidas.
 
 ## Persistência mapeada
 
-As migrations V1–V8 criam atleta, credenciais Garmin, resumo de atividade, indicador
+As migrations V1–V9 criam atleta, credenciais Garmin, resumo de atividade, indicador
 de teste VDOT, laps, telemetria e o esquema ainda não usado de planejamento. O fluxo
 atual persiste o resumo recebido do microsserviço e, por cascata JPA, seus laps e
 registros de telemetria. A V8 adiciona snapshots versionados da anamnese,
 disponibilidade por dia, superfícies, equipamentos e histórico de saúde. Nenhum
-cálculo numérico de VDOT é executado nesta versão;
-o sistema apenas identifica e marca a atividade de teste.
+cálculo da Etapa 3 depende da IA: o perfil Daniels é calculado pelo motor
+determinístico, e toda proposta OpenAI é novamente validada pelo backend antes de
+ser persistida. A V9 versiona planos, fases, semanas e critérios de revisão.
 
 ## Testes
 
@@ -66,11 +75,11 @@ $env:JAVA_HOME = 'C:\caminho\para\jdk-17'
 .\mvnw.cmd test
 ```
 
-Os testes usam H2 em memória, Flyway desabilitado e cliente Garmin simulado; não
+Os testes usam H2 em memória, Flyway desabilitado e clientes externos simulados; não
 tocam no MySQL local nem fazem login externo. A primeira auditoria do baseline
 executou as sete migrations com sucesso contra um MySQL 8 local vazio. A suíte cobre
-carga do contexto, rejeição de atividade duplicada e persistência do teste VDOT com
-lap e telemetria.
+carga do contexto, atividades, anamnese, motor Daniels e ciclo completo do plano
+geral. A integração OpenAI é testada sem rede e sem consumir tokens.
 
 ## Riscos conhecidos
 
@@ -82,5 +91,5 @@ lap e telemetria.
 - o método chamado `dailySyncRoutine` roda, por padrão, a cada 60 segundos;
 - não há retry/backoff, endpoint manual de sincronização ou teste automatizado
   das migrations contra MySQL;
-- as entidades de planejamento existem, mas motor Daniels, treinador OpenAI e envio
-  de workouts Garmin estão fora deste baseline.
+- o plano semanal, a entrega de workouts Garmin e a adaptação pós-treino ainda
+  pertencem às etapas seguintes.

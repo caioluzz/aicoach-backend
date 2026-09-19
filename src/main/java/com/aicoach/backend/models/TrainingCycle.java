@@ -3,6 +3,7 @@ package com.aicoach.backend.models;
 import com.aicoach.backend.enums.TrainingPhase;
 import jakarta.persistence.*;
 import lombok.Data;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -24,6 +25,27 @@ public class TrainingCycle {
     @Enumerated(EnumType.STRING)
     @Column(name = "phase", nullable = false)
     private TrainingPhase phase;
+
+    @Column(name = "cycle_order", nullable = false)
+    private Integer cycleOrder;
+
+    @Column(name = "start_week", nullable = false)
+    private Integer startWeek;
+
+    @Column(name = "end_week", nullable = false)
+    private Integer endWeek;
+
+    @Column(name = "start_date", nullable = false)
+    private LocalDate startDate;
+
+    @Column(name = "end_date", nullable = false)
+    private LocalDate endDate;
+
+    @Column(nullable = false, length = 500)
+    private String objective;
+
+    @Column(name = "expected_progression", nullable = false, length = 1000)
+    private String expectedProgression;
 
     // O volume máximo que o atleta pode atingir nesta fase específica
     @Column(name = "max_weekly_volume_km", nullable = false)
