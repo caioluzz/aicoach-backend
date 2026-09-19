@@ -5,7 +5,8 @@
 O plano geral é o mapa estratégico entre a data de criação e a prova-alvo. Ele
 contém fases, objetivos, progressão semanal prevista, semanas de recuperação,
 taper e critérios de revisão. Ele deliberadamente não contém sessões diárias,
-blocos ou passos de treino; isso pertence ao treinador semanal da Etapa 4.
+blocos ou passos de treino; o treinador semanal da Etapa 4 está documentado em
+[`weekly-plan-api.md`](weekly-plan-api.md).
 
 Cada versão fica vinculada ao atleta, objetivo, versão concluída da anamnese e
 perfil Daniels mais recente. Uma nova geração nunca altera uma versão anterior.
