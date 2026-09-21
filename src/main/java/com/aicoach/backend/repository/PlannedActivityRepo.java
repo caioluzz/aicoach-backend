@@ -38,4 +38,20 @@ public interface PlannedActivityRepo extends JpaRepository<PlannedActivity, Long
             @Param("from") LocalDate from,
             @Param("to") LocalDate to,
             @Param("statuses") Collection<WeeklyPlanStatus> statuses);
+
+    @Query("""
+            select p from PlannedActivity p
+            join fetch p.weeklyPlan wp
+            where wp.athlete.id = :athleteId
+              and wp.globalPlan.id = :globalPlanId
+              and wp.status in :statuses
+              and p.scheduledDate between :from and :to
+            order by p.scheduledDate, p.sessionOrder, p.id
+            """)
+    List<PlannedActivity> findSecondaryRaceWindow(
+            @Param("athleteId") Long athleteId,
+            @Param("globalPlanId") Long globalPlanId,
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to,
+            @Param("statuses") Collection<WeeklyPlanStatus> statuses);
 }

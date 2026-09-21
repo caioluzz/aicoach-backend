@@ -69,6 +69,8 @@ rotacionadas; esta etapa remove os valores do estado atual, sem reescrever hist�
 | `POST` | `/api/v1/activities/comparisons/athletes/{athleteId}/reconcile` | Registra sessões vencidas não executadas |
 | `POST` | `/api/athletes/{id}/feedback` | Registra feedback e calcula a adaptação determinística |
 | `GET` | `/api/athletes/{id}/feedback/decisions` | Consulta o histórico de decisões e revisões futuras |
+| `POST` | `/api/athletes/{id}/secondary-races` | Cadastra prova intermediária e calcula a reorganização determinística |
+| `GET` | `/api/athletes/{id}/secondary-races` | Lista provas e ajustes auditáveis do atleta |
 
 O contrato, as validações e um payload completo estão em
 [`docs/athlete-assessment-api.md`](docs/athlete-assessment-api.md).
@@ -86,6 +88,8 @@ A política de avaliação, a ferramenta interna e as garantias de acesso progre
 à telemetria estão em [`docs/activity-review-api.md`](docs/activity-review-api.md).
 As escalas, regras de alerta, materialidade e propostas para treinos futuros estão em
 [`docs/feedback-adaptation-api.md`](docs/feedback-adaptation-api.md).
+O cadastro, a proteção da prova-alvo e as regras pré/pós-prova estão em
+[`docs/secondary-races-api.md`](docs/secondary-races-api.md).
 
 Não existe endpoint de login/autenticação do usuário e não há Spring Security
 habilitado. A sincronização roda no startup e, por padrão, a cada duas horas. Ela
@@ -93,7 +97,7 @@ descobre metadados com uma janela de recuperação e baixa o FIT apenas de IDs a
 
 ## Persistência mapeada
 
-As migrations V1–V16 criam atleta, credenciais Garmin, resumo de atividade, indicador
+As migrations V1–V17 criam atleta, credenciais Garmin, resumo de atividade, indicador
 de teste VDOT, laps, telemetria e o esquema ainda não usado de planejamento. O fluxo
 atual persiste o resumo recebido do microsserviço e, por cascata JPA, seus laps e
 registros de telemetria. A V8 adiciona snapshots versionados da anamnese,
@@ -110,6 +114,8 @@ A V15 registra avaliações curtas e toda solicitação justificada de detalhe; 
 telemetria de 10 s, 5 s ou bruta não é copiada para essas tabelas.
 A V16 registra feedback por atividade ou dia, decisões determinísticas versionadas e
 propostas auditáveis para sessões futuras ainda não executadas.
+A V17 registra provas intermediárias e o overlay auditável de ajustes sobre semanas
+atuais ou adjacentes, sem substituir a prova-alvo nem reescrever o plano geral.
 
 ## Testes
 
