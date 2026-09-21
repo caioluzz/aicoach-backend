@@ -19,7 +19,7 @@ public final class WeeklyPlanFixtures {
                         new WeeklyPlanGenerationContext.Availability(DayOfWeek.SUNDAY, 120)),
                 DayOfWeek.SUNDAY, 4, 2, false, null, List.of(), 7.5, SleepQuality.GOOD,
                 RoutineType.FIXED, "Trabalho diurno", 45.0,
-                new WeeklyPlanGenerationContext.PaceProfile(330, 300, 280, 255, 235));
+                new WeeklyPlanGenerationContext.PaceProfile(330, 300, 280, 255, 235), null);
     }
 
     public static WeeklyPlanProposal validProposal(WeeklyPlanGenerationContext context) {
@@ -32,6 +32,21 @@ public final class WeeklyPlanFixtures {
                         WorkoutType.LONG_RUN, List.of(new WeeklyPlanProposal.Block(1, List.of(
                         step(WorkoutStepDefinition.Kind.WORK, DurationType.DISTANCE, 4_500,
                                 DanielsIntensity.E, "Mantenha conversa confortável")))))));
+    }
+
+    public static WeeklyPlanGenerationContext withAdaptation(WeeklyPlanGenerationContext value,
+                                                               int reduction, boolean allowIntensity) {
+        return new WeeklyPlanGenerationContext(value.athleteId(), value.seasonPlanId(),
+                value.seasonPlanWeekId(), value.weekNumber(), value.weekStart(), value.weekEnd(),
+                value.targetVolumeKm(), value.weekFocus(), value.recoveryWeek(), value.taperWeek(),
+                value.phase(), value.phaseObjective(), value.priorWeekTargetVolumeKm(),
+                value.targetRaceDate(), value.targetRaceDistanceMeters(), value.assessmentVersion(),
+                value.availability(), value.preferredLongRunDay(), value.currentRunsPerWeek(),
+                value.recoveryDaysPerWeek(), value.hasMedicalRestrictions(), value.medicalRestrictions(),
+                value.healthIssues(), value.averageSleepHours(), value.sleepQuality(), value.routineType(),
+                value.routineNotes(), value.vdot(), value.paces(),
+                new WeeklyPlanGenerationContext.Adaptation(99L, reduction, allowIntensity,
+                        AdaptationAlertLevel.REDUCE_LOAD, "recuperação insuficiente"));
     }
 
     private static WeeklyPlanProposal.Step step(WorkoutStepDefinition.Kind kind, DurationType durationType,

@@ -110,13 +110,14 @@ public class WeeklyPlanValidator {
         validateSchedule(context, proposal, longRuns, qualitySessions, raceSessions, violations);
         int totalDistance = calculations.stream().mapToInt(WeeklyPlanCalculation.Session::distanceMeters).sum();
         int totalDuration = calculations.stream().mapToInt(WeeklyPlanCalculation.Session::durationSeconds).sum();
-        int targetMeters = (int) Math.round(context.targetVolumeKm() * 1_000);
+        int targetMeters = (int) Math.round(context.effectiveTargetVolumeKm() * 1_000);
         int tolerance = Math.max(500, (int) Math.round(targetMeters * 0.05));
         if (Math.abs(totalDistance - targetMeters) > tolerance) {
             violations.add("Volume detalhado deve ficar a até 5% do alvo semanal");
         }
         validateDanielsWeek(proposal, calculations, violations);
         validateHealth(context, calculations, violations);
+        validateAdaptation(context, calculations, violations);
 
         if (!violations.isEmpty()) throw new WeeklyPlanValidationException(violations);
         return new WeeklyPlanCalculation(totalDistance, totalDuration, List.copyOf(calculations));
@@ -192,7 +193,7 @@ public class WeeklyPlanValidator {
         if (session.scheduledDate() != null && session.scheduledDate().getDayOfWeek() != context.preferredLongRunDay()) {
             violations.add("O longo deve usar o dia preferido informado");
         }
-        int weeklyMeters = (int) Math.round(context.targetVolumeKm() * 1_000);
+        int weeklyMeters = (int) Math.round(context.effectiveTargetVolumeKm() * 1_000);
         if (calculation.distanceMeters() > weeklyMeters * 30 / 100 || calculation.durationSeconds() > 9_000) {
             violations.add("E_LONG_RUN_LIMIT: longo excede 30% do volume semanal ou 150 minutos");
         }
@@ -225,9 +226,9 @@ public class WeeklyPlanValidator {
                         || step.intensity() == DanielsIntensity.E
                         && session.workoutType() == WorkoutType.LONG_RUN) {
                     addIssues(stimulusRules.validateContinuous(step.intensity(), workSeconds, workMeters,
-                            (int) Math.round(context.targetVolumeKm() * 1_000
+                            (int) Math.round(context.effectiveTargetVolumeKm() * 1_000
                                     * context.paces().forIntensity(DanielsIntensity.E) / 1_000.0),
-                            (int) Math.round(context.targetVolumeKm() * 1_000)), violations);
+                            (int) Math.round(context.effectiveTargetVolumeKm() * 1_000)), violations);
                 } else if (step.intensity() == DanielsIntensity.I || step.intensity() == DanielsIntensity.R) {
                     violations.add(step.intensity() + " deve ser prescrito em bloco repetido com recuperação");
                 }
@@ -270,6 +271,15 @@ public class WeeklyPlanValidator {
                     .anyMatch(load -> isQuality(load.intensity()) && load.durationSeconds() > 0);
             if (quality) violations.add("Lesão ativa moderada impede estímulos T/I/R");
         }
+    }
+
+    private void validateAdaptation(WeeklyPlanGenerationContext context,
+                                    List<WeeklyPlanCalculation.Session> calculations,
+                                    List<String> violations) {
+        if (context.adaptation() == null || Boolean.TRUE.equals(context.adaptation().allowIntensity())) return;
+        boolean quality = calculations.stream().flatMap(session -> session.intensityLoads().stream())
+                .anyMatch(load -> isQuality(load.intensity()) && load.durationSeconds() > 0);
+        if (quality) violations.add("Adaptação ativa impede estímulos T/I/R");
     }
 
     private int durationSeconds(WeeklyPlanGenerationContext context, WeeklyPlanProposal.Step step) {

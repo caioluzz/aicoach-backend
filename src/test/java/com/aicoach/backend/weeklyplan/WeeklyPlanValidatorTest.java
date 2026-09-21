@@ -4,6 +4,11 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.List;
+import com.aicoach.backend.enums.DurationType;
+import com.aicoach.backend.enums.WorkoutType;
+import com.aicoach.backend.training.daniels.DanielsIntensity;
+import com.aicoach.backend.training.workout.WorkoutStepDefinition;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -46,5 +51,24 @@ class WeeklyPlanValidatorTest {
 
         assertThrows(WeeklyPlanValidationException.class,
                 () -> validator.validate(context, new WeeklyPlanProposal(valid.summary(), sessions)));
+    }
+
+    @Test
+    void appliesActiveAdaptationToTheNextWeeklyVolume() {
+        WeeklyPlanGenerationContext adapted = WeeklyPlanFixtures.withAdaptation(context, 25, false);
+        WeeklyPlanProposal proposal = new WeeklyPlanProposal("Semana reduzida para recuperação", List.of(
+                new WeeklyPlanProposal.Session(1, "Rodagem fácil", adapted.weekStart().plusDays(1),
+                        WorkoutType.EASY_RUN, List.of(new WeeklyPlanProposal.Block(1, List.of(
+                        new WeeklyPlanProposal.Step(WorkoutStepDefinition.Kind.WORK, DurationType.DISTANCE,
+                                7_875, DanielsIntensity.E, "Leve"))))),
+                new WeeklyPlanProposal.Session(2, "Longo reduzido", adapted.weekStart().plusDays(6),
+                        WorkoutType.LONG_RUN, List.of(new WeeklyPlanProposal.Block(1, List.of(
+                        new WeeklyPlanProposal.Step(WorkoutStepDefinition.Kind.WORK, DurationType.DISTANCE,
+                                3_375, DanielsIntensity.E, "Leve")))))));
+
+        WeeklyPlanCalculation result = validator.validate(adapted, proposal);
+
+        assertEquals(11.25, adapted.effectiveTargetVolumeKm());
+        assertEquals(11_250, result.totalDistanceMeters());
     }
 }

@@ -20,6 +20,7 @@ public class WeeklyPlanService {
     private final AthleteRepo athleteRepo;
     private final GlobalPlanRepo seasonPlanRepo;
     private final WeeklyPlanRepo weeklyPlanRepo;
+    private final AdaptationDecisionRepo adaptationDecisionRepo;
     private final WeeklyPlanGenerator generator;
     private final WeeklyPlanValidator validator;
     private final Clock clock;
@@ -45,6 +46,7 @@ public class WeeklyPlanService {
         validateHealthClearance(assessment);
         AthleteMetrics metrics = seasonPlan.getAthleteMetrics();
         WeeklyPlanGenerationContext context = toContext(seasonPlan, week, cycle, assessment, metrics);
+        ensureTrainingAllowed(context);
         WeeklyPlanGenerationResult generated = generator.generate(context);
         WeeklyPlanCalculation calculation = validator.validate(context, generated.proposal());
 
@@ -100,6 +102,7 @@ public class WeeklyPlanService {
         ensureReviewable(source);
         WeeklyPlanGenerationContext context = toContext(source.getGlobalPlan(), source.getSeasonPlanWeek(),
                 source.getTrainingCycle(), source.getAssessment(), source.getAthleteMetrics());
+        ensureTrainingAllowed(context);
         WeeklyPlanGenerationResult generated = generator.generate(context);
         WeeklyPlanCalculation calculation = validator.validate(context, generated.proposal());
         int version = nextVersion(athleteId, source.getGlobalPlan().getId(),
@@ -120,6 +123,7 @@ public class WeeklyPlanService {
         ensureReviewable(source);
         WeeklyPlanGenerationContext context = toContext(source.getGlobalPlan(), source.getSeasonPlanWeek(),
                 source.getTrainingCycle(), source.getAssessment(), source.getAthleteMetrics());
+        ensureTrainingAllowed(context);
         WeeklyPlanProposal proposal = toProposal(request);
         WeeklyPlanCalculation calculation = validator.validate(context, proposal);
         WeeklyPlanGenerationResult manual = new WeeklyPlanGenerationResult(
@@ -142,6 +146,7 @@ public class WeeklyPlanService {
                 .filter(item -> item.getWeekNumber() == week.getWeekNumber() - 1)
                 .map(SeasonPlanWeek::getTargetVolumeKm).findFirst()
                 .orElse(assessment.getRecentAverageWeeklyVolumeKm());
+        WeeklyPlanGenerationContext.Adaptation adaptation = activeAdaptation(plan.getAthlete().getId(), week);
         return new WeeklyPlanGenerationContext(plan.getAthlete().getId(), plan.getId(), week.getId(),
                 week.getWeekNumber(), week.getStartDate(), week.getEndDate(), week.getTargetVolumeKm(),
                 week.getFocus(), week.getRecoveryWeek(), week.getTaperWeek(), cycle.getPhase(),
@@ -157,7 +162,25 @@ public class WeeklyPlanService {
                 assessment.getAverageSleepHours(), assessment.getSleepQuality(), assessment.getRoutineType(),
                 assessment.getRoutineNotes(), metrics.getVdot(), new WeeklyPlanGenerationContext.PaceProfile(
                 metrics.getEasyPaceSec(), metrics.getMarathonPaceSec(), metrics.getThresholdPaceSec(),
-                metrics.getIntervalPaceSec(), metrics.getRepetitionPaceSec()));
+                metrics.getIntervalPaceSec(), metrics.getRepetitionPaceSec()), adaptation);
+    }
+
+    private WeeklyPlanGenerationContext.Adaptation activeAdaptation(Long athleteId, SeasonPlanWeek week) {
+        return adaptationDecisionRepo.findTopByAthleteIdOrderByCreatedAtDesc(athleteId)
+                .filter(decision -> !decision.getFeedback().getFeedbackDate().isAfter(week.getEndDate()))
+                .filter(decision -> !decision.getFeedback().getFeedbackDate().plusDays(7)
+                        .isBefore(week.getStartDate()))
+                .map(decision -> new WeeklyPlanGenerationContext.Adaptation(decision.getId(),
+                        decision.getLoadReductionPercent(), decision.isAllowIntensity(),
+                        decision.getAlertLevel(), decision.getRationale()))
+                .orElse(null);
+    }
+
+    private void ensureTrainingAllowed(WeeklyPlanGenerationContext context) {
+        if (context.adaptation() != null && context.adaptation().loadReductionPercent() >= 100) {
+            throw new WeeklyPlanPrerequisiteException(
+                    "Adaptação ativa suspende o treino até avaliação e novo feedback");
+        }
     }
 
     private void validateHealthClearance(AthleteAssessment assessment) {
@@ -189,7 +212,7 @@ public class WeeklyPlanService {
         plan.setStatus(WeeklyPlanStatus.VALIDATED);
         plan.setWeekStart(week.getStartDate());
         plan.setWeekEnd(week.getEndDate());
-        plan.setTargetVolumeKm(week.getTargetVolumeKm());
+        plan.setTargetVolumeKm(context.effectiveTargetVolumeKm());
         plan.setPlannedDistanceMeters(calculation.totalDistanceMeters());
         plan.setPlannedDurationSeconds(calculation.totalDurationSeconds());
         plan.setSummary(generated.proposal().summary().trim());

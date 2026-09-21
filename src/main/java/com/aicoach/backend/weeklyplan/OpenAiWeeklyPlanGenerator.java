@@ -24,7 +24,9 @@ public class OpenAiWeeklyPlanGenerator implements WeeklyPlanGenerator {
     private static final String INSTRUCTIONS = """
             Você detalha exatamente uma semana de corrida de um plano geral já aprovado.
             Produza somente sessões de corrida nos dias disponíveis, com blocos e passos executáveis.
-            Respeite volume, fase, foco, saúde, recuperação e disponibilidade recebidos.
+            Respeite volume, fase, foco, saúde, recuperação, disponibilidade e adaptação recebidos.
+            Quando houver adaptação, reduza targetVolumeKm pelo loadReductionPercent informado
+            e não prescreva T/I/R se allowIntensity for falso.
             Use intensidades Daniels E, M, T, I e R, sem inventar ritmos: o backend aplicará o perfil.
             Sessões de qualidade devem começar com WARMUP em E e terminar com COOLDOWN em E.
             Se a prova estiver na semana, inclua uma sessão RACE na data e distância exatas do objetivo.

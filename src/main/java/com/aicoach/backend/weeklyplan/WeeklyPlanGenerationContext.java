@@ -36,7 +36,13 @@ public record WeeklyPlanGenerationContext(
         RoutineType routineType,
         String routineNotes,
         Double vdot,
-        PaceProfile paces) {
+        PaceProfile paces,
+        Adaptation adaptation) {
+
+    public double effectiveTargetVolumeKm() {
+        if (adaptation == null) return targetVolumeKm;
+        return targetVolumeKm * (100 - adaptation.loadReductionPercent()) / 100.0;
+    }
 
     public record Availability(DayOfWeek dayOfWeek, Integer availableMinutes) {}
 
@@ -57,4 +63,7 @@ public record WeeklyPlanGenerationContext(
             return pace;
         }
     }
+
+    public record Adaptation(Long decisionId, Integer loadReductionPercent, Boolean allowIntensity,
+                             AdaptationAlertLevel alertLevel, String rationale) {}
 }

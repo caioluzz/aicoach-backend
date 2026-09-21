@@ -67,6 +67,8 @@ rotacionadas; esta etapa remove os valores do estado atual, sem reescrever hist�
 | `GET` | `/api/v1/activities/{activityId}/review` | Consulta a avaliação e a auditoria dos aprofundamentos |
 | `GET` | `/api/v1/activities/comparisons/athletes/{athleteId}` | Lista comparações do atleta |
 | `POST` | `/api/v1/activities/comparisons/athletes/{athleteId}/reconcile` | Registra sessões vencidas não executadas |
+| `POST` | `/api/athletes/{id}/feedback` | Registra feedback e calcula a adaptação determinística |
+| `GET` | `/api/athletes/{id}/feedback/decisions` | Consulta o histórico de decisões e revisões futuras |
 
 O contrato, as validações e um payload completo estão em
 [`docs/athlete-assessment-api.md`](docs/athlete-assessment-api.md).
@@ -82,6 +84,8 @@ O pareamento, alinhamento, tolerâncias e cálculo reproduzível de cumprimento 
 [`docs/activity-comparison-api.md`](docs/activity-comparison-api.md).
 A política de avaliação, a ferramenta interna e as garantias de acesso progressivo
 à telemetria estão em [`docs/activity-review-api.md`](docs/activity-review-api.md).
+As escalas, regras de alerta, materialidade e propostas para treinos futuros estão em
+[`docs/feedback-adaptation-api.md`](docs/feedback-adaptation-api.md).
 
 Não existe endpoint de login/autenticação do usuário e não há Spring Security
 habilitado. A sincronização roda no startup e, por padrão, a cada duas horas. Ela
@@ -89,7 +93,7 @@ descobre metadados com uma janela de recuperação e baixa o FIT apenas de IDs a
 
 ## Persistência mapeada
 
-As migrations V1–V15 criam atleta, credenciais Garmin, resumo de atividade, indicador
+As migrations V1–V16 criam atleta, credenciais Garmin, resumo de atividade, indicador
 de teste VDOT, laps, telemetria e o esquema ainda não usado de planejamento. O fluxo
 atual persiste o resumo recebido do microsserviço e, por cascata JPA, seus laps e
 registros de telemetria. A V8 adiciona snapshots versionados da anamnese,
@@ -104,6 +108,8 @@ adiciona checkpoint, status e contadores do pipeline de sincronização. A V14 p
 pareamento e os resultados determinísticos total e por etapa para reuso semanal.
 A V15 registra avaliações curtas e toda solicitação justificada de detalhe; a
 telemetria de 10 s, 5 s ou bruta não é copiada para essas tabelas.
+A V16 registra feedback por atividade ou dia, decisões determinísticas versionadas e
+propostas auditáveis para sessões futuras ainda não executadas.
 
 ## Testes
 
@@ -129,5 +135,4 @@ tokens.
   microsserviço a cada sincronização;
 - a descoberta é limitada à quantidade configurada; intervalos muito longos sem
   execução podem exigir ampliar `GARMIN_SYNC_DISCOVERY_LIMIT` temporariamente;
-- feedback e adaptação dos próximos treinos continuam fora desta etapa;
 - a integração Garmin não oficial pode mudar sem aviso e precisa de monitoramento.
