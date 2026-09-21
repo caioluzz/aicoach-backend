@@ -3,6 +3,7 @@ package com.aicoach.backend.api;
 import com.aicoach.backend.models.Activity;
 import com.aicoach.backend.dto.ActivitySyncResponse;
 import com.aicoach.backend.dto.ActivityComparisonResponse;
+import com.aicoach.backend.dto.ActivityReviewResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -38,6 +39,12 @@ public interface ActivityApi {
 
     @GetMapping("/{activityId}/comparison")
     ResponseEntity<ActivityComparisonResponse> getComparison(@PathVariable Long activityId);
+
+    @PostMapping("/{activityId}/review")
+    ResponseEntity<ActivityReviewResponse> reviewActivity(@PathVariable Long activityId);
+
+    @GetMapping("/{activityId}/review")
+    ResponseEntity<ActivityReviewResponse> getActivityReview(@PathVariable Long activityId);
 
     @GetMapping("/comparisons/athletes/{athleteId}")
     ResponseEntity<List<ActivityComparisonResponse>> listComparisons(@PathVariable Long athleteId);
