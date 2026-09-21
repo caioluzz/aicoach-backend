@@ -5,6 +5,8 @@ import com.aicoach.backend.models.Activity;
 import com.aicoach.backend.dto.ActivitySyncResponse;
 import com.aicoach.backend.dto.ActivityComparisonResponse;
 import com.aicoach.backend.dto.ActivityReviewResponse;
+import com.aicoach.backend.dto.ActivitySummaryResponse;
+import com.aicoach.backend.dto.VdotTestConfirmationResponse;
 import com.aicoach.backend.service.ActivityComparisonService;
 import com.aicoach.backend.service.ActivityReviewService;
 import com.aicoach.backend.service.ActivityService;
@@ -78,5 +80,15 @@ public class ActivityController implements ActivityApi {
     @Override
     public ResponseEntity<List<ActivityComparisonResponse>> reconcileComparisons(Long athleteId, LocalDate throughDate) {
         return ResponseEntity.ok(activityComparisonService.reconcileMissed(athleteId, throughDate));
+    }
+
+    @Override
+    public ResponseEntity<List<ActivitySummaryResponse>> listActivities(Long athleteId) {
+        return ResponseEntity.ok(activityService.listActivities(athleteId));
+    }
+
+    @Override
+    public ResponseEntity<VdotTestConfirmationResponse> confirmVdotTest(Long athleteId, Long activityId) {
+        return ResponseEntity.ok(activityService.confirmVdotTest(athleteId, activityId));
     }
 }

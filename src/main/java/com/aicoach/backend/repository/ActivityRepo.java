@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.List;
 
 @Repository
 public interface ActivityRepo extends JpaRepository<Activity, Long> {
@@ -19,4 +20,6 @@ public interface ActivityRepo extends JpaRepository<Activity, Long> {
     Optional<Activity> findByGarminActivityId(Long garminActivityId);
 
     Optional<Activity> findByIdAndAthleteId(Long id, Long athleteId);
+
+    List<Activity> findByAthleteIdOrderByStartedAtDesc(Long athleteId);
 }

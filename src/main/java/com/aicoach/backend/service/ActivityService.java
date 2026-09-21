@@ -2,13 +2,17 @@ package com.aicoach.backend.service;
 
 import com.aicoach.backend.client.GarminBotClient;
 import com.aicoach.backend.dto.ActivitySyncResponse;
+import com.aicoach.backend.dto.ActivitySummaryResponse;
 import com.aicoach.backend.dto.GarminActivityMetadata;
 import com.aicoach.backend.dto.GarminBotResponseDTO;
+import com.aicoach.backend.dto.VdotTestConfirmationResponse;
 import com.aicoach.backend.enums.ActivitySyncStatus;
 import com.aicoach.backend.models.*;
 import com.aicoach.backend.repository.ActivityRepo;
 import com.aicoach.backend.repository.ActivitySyncStateRepo;
+import com.aicoach.backend.repository.AthleteMetricsRepo;
 import com.aicoach.backend.repository.AthleteRepo;
+import com.aicoach.backend.training.daniels.DanielsIntensity;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -19,10 +23,13 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -36,8 +43,11 @@ public class ActivityService {
     private final ActivityRepo activityRepo;
     private final AthleteRepo athleteRepo;
     private final ActivitySyncStateRepo syncStateRepo;
+    private final AthleteMetricsRepo athleteMetricsRepo;
     private final GarminBotClient garminBotClient;
     private final ActivityComparisonService activityComparisonService;
+    private final Clock clock;
+    private final com.aicoach.backend.training.daniels.DanielsPerformanceEngine performanceEngine;
     private final AtomicBoolean allAthletesSyncRunning = new AtomicBoolean(false);
     private final Set<Long> activeAthleteSyncs = ConcurrentHashMap.newKeySet();
 
@@ -215,6 +225,59 @@ public class ActivityService {
                 .map(this::toResponse)
                 .orElse(new ActivitySyncResponse(
                         athleteId, ActivitySyncStatus.NEVER_RUN, null, null, null, 0, 0, 0, null));
+    }
+
+    @Transactional
+    public List<ActivitySummaryResponse> listActivities(Long athleteId) {
+        if (!athleteRepo.existsById(athleteId)) throw new AthleteNotFoundException(athleteId);
+        return activityRepo.findByAthleteIdOrderByStartedAtDesc(athleteId).stream()
+                .map(activity -> new ActivitySummaryResponse(activity.getId(), athleteId,
+                        activity.getGarminActivityId(), activity.getName(), activity.getStartedAt(),
+                        activity.getEndedAt(), activity.getDistanceMeters(), activity.getDurationSeconds(),
+                        activity.getSport(), activity.getIsVdotTest(), activity.getAvgPaceSPerKm(),
+                        activity.getAverageHeartRate(), activity.getAvgCadence()))
+                .toList();
+    }
+
+    @Transactional
+    public VdotTestConfirmationResponse confirmVdotTest(Long athleteId, Long activityId) {
+        Activity activity = activityRepo.findByIdAndAthleteId(activityId, athleteId)
+                .orElseThrow(() -> new IllegalArgumentException("Atividade não pertence ao atleta"));
+        if (activity.getSport() == null || !activity.getSport().toLowerCase().contains("run")) {
+            throw new IllegalArgumentException("Somente uma atividade de corrida pode ser confirmada como teste");
+        }
+        if (activity.getDistanceMeters() == null || activity.getDurationSeconds() == null) {
+            throw new IllegalArgumentException("A atividade não possui distância e duração suficientes");
+        }
+        int distance = (int) Math.round(activity.getDistanceMeters());
+        int duration = (int) Math.round(activity.getDurationSeconds());
+        var profile = performanceEngine.fromThreeKmTest(distance, duration);
+        activityRepo.findByAthleteIdAndIsVdotTestTrue(athleteId).ifPresent(previous -> {
+            previous.setIsVdotTest(false);
+            activityRepo.save(previous);
+        });
+        activity.setIsVdotTest(true);
+        activityRepo.save(activity);
+
+        Athlete athlete = athleteRepo.findById(athleteId)
+                .orElseThrow(() -> new AthleteNotFoundException(athleteId));
+        AthleteMetrics metrics = new AthleteMetrics();
+        metrics.setAthlete(athlete);
+        metrics.setRecordedAt(LocalDateTime.ofInstant(profile.calculatedAt(), clock.getZone()));
+        metrics.setVdot(profile.vdot());
+        metrics.setEasyPaceSec(profile.paces().get(DanielsIntensity.E).slowestSecondsPerKm());
+        metrics.setMarathonPaceSec(profile.paces().get(DanielsIntensity.M).slowestSecondsPerKm());
+        metrics.setThresholdPaceSec(profile.paces().get(DanielsIntensity.T).slowestSecondsPerKm());
+        metrics.setIntervalPaceSec(profile.paces().get(DanielsIntensity.I).slowestSecondsPerKm());
+        metrics.setRepetitionPaceSec(profile.paces().get(DanielsIntensity.R).slowestSecondsPerKm());
+        athleteMetricsRepo.save(metrics);
+
+        Map<String, VdotTestConfirmationResponse.PaceRange> paces = new LinkedHashMap<>();
+        profile.paces().forEach((intensity, pace) -> paces.put(intensity.name(),
+                new VdotTestConfirmationResponse.PaceRange(pace.fastestSecondsPerKm(), pace.slowestSecondsPerKm())));
+        return new VdotTestConfirmationResponse(activityId, athleteId, distance, duration,
+                new VdotTestConfirmationResponse.PerformanceProfile(profile.vdot(), profile.engineVersion(),
+                        profile.coefficientSet(), profile.calculatedAt(), paces));
     }
 
     private <T> T retry(Supplier<T> operation, String phase, Long athleteId) {

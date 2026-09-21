@@ -41,6 +41,11 @@ rotacionadas; esta etapa remove os valores do estado atual, sem reescrever hist�
 | `POST` | `/api/athletes/{id}/assessments` | Cria uma versão estruturada da anamnese |
 | `GET` | `/api/athletes/{id}/assessments/latest` | Consulta a anamnese mais recente |
 | `GET` | `/api/athletes/{id}/assessments` | Consulta o histórico versionado da anamnese |
+| `GET` | `/api/configuration/athletes/{id}` | Consulta apenas o estado mascarado do Garmin/OpenAI |
+| `PUT` | `/api/configuration/athletes/{id}/garmin` | Substitui credenciais Garmin; a senha nunca é devolvida |
+| `POST` | `/api/athletes/{id}/vdot-test/workout/preview` | Pré-visualiza o workout estruturado de 3 km |
+| `POST` | `/api/athletes/{id}/vdot-test/workout/deliver` | Envia/agende o teste de 3 km com chave idempotente |
+| `POST` | `/api/athletes/{id}/planning-runs` | Sincroniza, processa o contexto e gera/reutiliza a proposta seguinte |
 | `POST` | `/api/athletes/{id}/season-plans` | Gera e valida uma proposta de plano geral |
 | `GET` | `/api/athletes/{id}/season-plans/latest` | Consulta a versão mais recente do plano |
 | `GET` | `/api/athletes/{id}/season-plans` | Consulta o histórico de planos |
@@ -61,6 +66,8 @@ rotacionadas; esta etapa remove os valores do estado atual, sem reescrever hist�
 | `POST` | `/api/v1/activities/sync/{athleteId}` | Executa a sincronização manual de um atleta |
 | `GET` | `/api/v1/activities/sync/status` | Consulta status e contadores da sincronização |
 | `GET` | `/api/v1/activities/sync/status/{athleteId}` | Consulta o status de um atleta |
+| `GET` | `/api/v1/activities/athletes/{athleteId}` | Lista atividades resumidas para seleção do teste |
+| `POST` | `/api/v1/activities/athletes/{athleteId}/{activityId}/vdot-test/confirm` | Confirma atividade de 3 km e calcula VDOT/ritmos |
 | `POST` | `/api/v1/activities/{activityId}/comparison` | Calcula ou recalcula o cumprimento |
 | `GET` | `/api/v1/activities/{activityId}/comparison` | Consulta o cumprimento persistido |
 | `POST` | `/api/v1/activities/{activityId}/review` | Gera ou reutiliza a avaliação curta da atividade |
