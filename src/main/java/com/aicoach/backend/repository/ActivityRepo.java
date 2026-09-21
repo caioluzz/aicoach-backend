@@ -17,4 +17,6 @@ public interface ActivityRepo extends JpaRepository<Activity, Long> {
     Optional<Activity> findByAthleteIdAndIsVdotTestTrue(Long athleteId);
 
     Optional<Activity> findByGarminActivityId(Long garminActivityId);
+
+    Optional<Activity> findByIdAndAthleteId(Long id, Long athleteId);
 }

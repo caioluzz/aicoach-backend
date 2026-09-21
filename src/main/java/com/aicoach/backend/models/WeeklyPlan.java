@@ -17,9 +17,9 @@ import java.util.List;
 @Getter
 @Setter
 public class WeeklyPlan {
-    public static final String CURRENT_PROMPT_VERSION = "weekly-plan-1.0";
+    public static final String CURRENT_PROMPT_VERSION = "weekly-plan-1.1";
     public static final String CURRENT_SCHEMA_VERSION = "1.0";
-    public static final String CURRENT_VALIDATOR_VERSION = "weekly-plan-validator-1.0";
+    public static final String CURRENT_VALIDATOR_VERSION = "weekly-plan-validator-1.1";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
