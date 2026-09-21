@@ -4,7 +4,9 @@ import com.aicoach.backend.api.ActivityApi;
 import com.aicoach.backend.models.Activity;
 import com.aicoach.backend.dto.ActivitySyncResponse;
 import com.aicoach.backend.dto.ActivityComparisonResponse;
+import com.aicoach.backend.dto.ActivityReviewResponse;
 import com.aicoach.backend.service.ActivityComparisonService;
+import com.aicoach.backend.service.ActivityReviewService;
 import com.aicoach.backend.service.ActivityService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -20,6 +22,7 @@ public class ActivityController implements ActivityApi {
 
     private final ActivityService activityService;
     private final ActivityComparisonService activityComparisonService;
+    private final ActivityReviewService activityReviewService;
 
     @Override
     public ResponseEntity<Activity> createActivity(Activity activity) {
@@ -55,6 +58,16 @@ public class ActivityController implements ActivityApi {
     @Override
     public ResponseEntity<ActivityComparisonResponse> getComparison(Long activityId) {
         return ResponseEntity.ok(activityComparisonService.getForActivity(activityId));
+    }
+
+    @Override
+    public ResponseEntity<ActivityReviewResponse> reviewActivity(Long activityId) {
+        return ResponseEntity.ok(activityReviewService.review(activityId));
+    }
+
+    @Override
+    public ResponseEntity<ActivityReviewResponse> getActivityReview(Long activityId) {
+        return ResponseEntity.ok(activityReviewService.getForActivity(activityId));
     }
 
     @Override

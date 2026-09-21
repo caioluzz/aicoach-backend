@@ -63,6 +63,8 @@ rotacionadas; esta etapa remove os valores do estado atual, sem reescrever hist�
 | `GET` | `/api/v1/activities/sync/status/{athleteId}` | Consulta o status de um atleta |
 | `POST` | `/api/v1/activities/{activityId}/comparison` | Calcula ou recalcula o cumprimento |
 | `GET` | `/api/v1/activities/{activityId}/comparison` | Consulta o cumprimento persistido |
+| `POST` | `/api/v1/activities/{activityId}/review` | Gera ou reutiliza a avaliação curta da atividade |
+| `GET` | `/api/v1/activities/{activityId}/review` | Consulta a avaliação e a auditoria dos aprofundamentos |
 | `GET` | `/api/v1/activities/comparisons/athletes/{athleteId}` | Lista comparações do atleta |
 | `POST` | `/api/v1/activities/comparisons/athletes/{athleteId}/reconcile` | Registra sessões vencidas não executadas |
 
@@ -78,6 +80,8 @@ O pipeline de descoberta, checkpoint, retries e importação está em
 [`docs/activity-sync-api.md`](docs/activity-sync-api.md).
 O pareamento, alinhamento, tolerâncias e cálculo reproduzível de cumprimento estão em
 [`docs/activity-comparison-api.md`](docs/activity-comparison-api.md).
+A política de avaliação, a ferramenta interna e as garantias de acesso progressivo
+à telemetria estão em [`docs/activity-review-api.md`](docs/activity-review-api.md).
 
 Não existe endpoint de login/autenticação do usuário e não há Spring Security
 habilitado. A sincronização roda no startup e, por padrão, a cada duas horas. Ela
@@ -85,7 +89,7 @@ descobre metadados com uma janela de recuperação e baixa o FIT apenas de IDs a
 
 ## Persistência mapeada
 
-As migrations V1–V14 criam atleta, credenciais Garmin, resumo de atividade, indicador
+As migrations V1–V15 criam atleta, credenciais Garmin, resumo de atividade, indicador
 de teste VDOT, laps, telemetria e o esquema ainda não usado de planejamento. O fluxo
 atual persiste o resumo recebido do microsserviço e, por cascata JPA, seus laps e
 registros de telemetria. A V8 adiciona snapshots versionados da anamnese,
@@ -98,6 +102,8 @@ instruções e ritmos Daniels auditáveis. A V11 registra revisão e aprovação
 persiste entrega Garmin, IDs externos, idempotência, tentativas e confirmações. A V13
 adiciona checkpoint, status e contadores do pipeline de sincronização. A V14 persiste o
 pareamento e os resultados determinísticos total e por etapa para reuso semanal.
+A V15 registra avaliações curtas e toda solicitação justificada de detalhe; a
+telemetria de 10 s, 5 s ou bruta não é copiada para essas tabelas.
 
 ## Testes
 
@@ -107,7 +113,8 @@ $env:JAVA_HOME = 'C:\caminho\para\jdk-17'
 ```
 
 Os testes usam H2 em memória, Flyway desabilitado e clientes externos simulados; não
-tocam no MySQL local nem fazem login externo. A primeira auditoria do baseline
+tocam no MySQL local nem fazem login externo. As respostas OpenAI do treinador de
+atividade também são simuladas, inclusive chamadas de ferramenta. A primeira auditoria do baseline
 executou as sete migrations com sucesso contra um MySQL 8 local vazio. A suíte cobre
 carga do contexto, atividades, anamnese, motor Daniels e ciclos completos dos
 planos geral e semanal. A integração OpenAI é testada sem rede e sem consumir
@@ -122,5 +129,5 @@ tokens.
   microsserviço a cada sincronização;
 - a descoberta é limitada à quantidade configurada; intervalos muito longos sem
   execução podem exigir ampliar `GARMIN_SYNC_DISCOVERY_LIMIT` temporariamente;
-- a análise por IA e a adaptação por feedback continuam fora desta etapa;
+- feedback e adaptação dos próximos treinos continuam fora desta etapa;
 - a integração Garmin não oficial pode mudar sem aviso e precisa de monitoramento.

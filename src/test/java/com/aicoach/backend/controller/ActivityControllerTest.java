@@ -2,11 +2,14 @@ package com.aicoach.backend.controller;
 
 import com.aicoach.backend.dto.ActivitySyncResponse;
 import com.aicoach.backend.dto.ActivityComparisonResponse;
+import com.aicoach.backend.dto.ActivityReviewResponse;
 import com.aicoach.backend.enums.ActivityMatchType;
+import com.aicoach.backend.enums.ActivityReviewStatus;
 import com.aicoach.backend.enums.ComplianceClassification;
 import com.aicoach.backend.enums.ActivitySyncStatus;
 import com.aicoach.backend.service.ActivityService;
 import com.aicoach.backend.service.ActivityComparisonService;
+import com.aicoach.backend.service.ActivityReviewService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -27,13 +30,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ActivityControllerTest {
     private ActivityService service;
     private ActivityComparisonService comparisonService;
+    private ActivityReviewService reviewService;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         service = mock(ActivityService.class);
         comparisonService = mock(ActivityComparisonService.class);
-        mockMvc = MockMvcBuilders.standaloneSetup(new ActivityController(service, comparisonService)).build();
+        reviewService = mock(ActivityReviewService.class);
+        mockMvc = MockMvcBuilders.standaloneSetup(new ActivityController(service, comparisonService, reviewService)).build();
     }
 
     @Test
@@ -73,6 +78,21 @@ class ActivityControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.compliancePercentage").value(96.50))
                 .andExpect(jsonPath("$.toleranceVersion").value("activity-comparison-v1"));
+    }
+
+    @Test
+    void startsCoachReviewWithoutExposingInternalTelemetryTool() throws Exception {
+        ActivityReviewResponse response = new ActivityReviewResponse(10L, 44L, 9L,
+                ActivityReviewStatus.COMPLETED, "activity-review-policy-v1", "discrepância relevante",
+                true, "Houve perda de ritmo no trecho final.", "gpt-test", "resp_10",
+                100, 20, 75L, Instant.parse("2026-09-20T18:00:00Z"),
+                Instant.parse("2026-09-20T18:00:01Z"), List.of());
+        when(reviewService.review(44L)).thenReturn(response);
+
+        mockMvc.perform(post("/api/v1/activities/44/review"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.assessment").value("Houve perda de ritmo no trecho final."));
     }
 
     private ActivitySyncResponse response() {
