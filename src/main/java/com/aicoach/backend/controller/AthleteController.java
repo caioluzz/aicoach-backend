@@ -2,6 +2,7 @@ package com.aicoach.backend.controller;
 
 import com.aicoach.backend.api.AthleteApi;
 import com.aicoach.backend.dto.AthleteRequestDTO;
+import com.aicoach.backend.dto.AthleteSummaryResponse;
 import com.aicoach.backend.dto.CreatedAthleteResponseDTO;
 import com.aicoach.backend.models.Athlete;
 import com.aicoach.backend.service.AthleteService;
@@ -23,7 +24,7 @@ public class AthleteController implements AthleteApi {
     }
 
     @Override
-    public List<Athlete> getAllAthletes() {
+    public List<AthleteSummaryResponse> getAllAthletes() {
         return athleteService.getAllAthletes();
     }
 }

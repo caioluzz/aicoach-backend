@@ -10,5 +10,7 @@ public record ConfigurationStatusResponse(
     public record IntegrationStatus(boolean configured, String maskedHint, Instant lastValidatedAt) {}
 
     public record OpenAiStatus(boolean configured, String maskedHint, Instant lastValidatedAt,
-                               String plannerModel, String weeklyPlannerModel, String activityReviewModel) {}
+                               String plannerModel, String weeklyPlannerModel, String activityReviewModel,
+                               int maxOutputTokens, int weeklyMaxOutputTokens,
+                               int activityReviewMaxOutputTokens, String source) {}
 }

@@ -1,11 +1,13 @@
 package com.aicoach.backend.review;
 
+import com.aicoach.backend.config.OpenAiRuntimeSettingsProvider;
 import com.aicoach.backend.dto.ActivitySegmentDetailRequest;
 import com.aicoach.backend.dto.ActivitySegmentDetails;
 import com.aicoach.backend.enums.SegmentQueryType;
 import com.aicoach.backend.enums.SegmentResolution;
 import com.aicoach.backend.enums.TelemetryField;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -34,11 +36,11 @@ public class OpenAiActivityCoach implements ActivityCoach {
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
-    private final String apiKey;
-    private final String model;
-    private final int maxOutputTokens;
     private final int maxRetries;
     private final int maxInspections;
+    private final OpenAiRuntimeSettingsProvider settingsProvider;
+    private final ThreadLocal<String> activeApiKey = new ThreadLocal<>();
+    private final ThreadLocal<String> activeModel = new ThreadLocal<>();
 
     public OpenAiActivityCoach(ObjectMapper objectMapper,
                                @Value("${openai.api.url:https://api.openai.com/v1}") String apiUrl,
@@ -48,29 +50,46 @@ public class OpenAiActivityCoach implements ActivityCoach {
                                @Value("${openai.timeout-seconds:60}") int timeoutSeconds,
                                @Value("${openai.max-retries:2}") int maxRetries,
                                @Value("${openai.activity-review.max-inspections:4}") int maxInspections) {
+        this(objectMapper, apiUrl, apiKey, model, maxOutputTokens, timeoutSeconds, maxRetries, maxInspections,
+                athleteId -> new OpenAiRuntimeSettingsProvider.Settings(apiKey, model, model, model,
+                        maxOutputTokens, maxOutputTokens, maxOutputTokens));
+    }
+
+    @Autowired
+    public OpenAiActivityCoach(ObjectMapper objectMapper,
+                               @Value("${openai.api.url:https://api.openai.com/v1}") String apiUrl,
+                               @Value("${openai.api.key:}") String apiKey,
+                               @Value("${openai.model.activity-review:gpt-5-mini}") String model,
+                               @Value("${openai.activity-review.max-output-tokens:2500}") int maxOutputTokens,
+                               @Value("${openai.timeout-seconds:60}") int timeoutSeconds,
+                               @Value("${openai.max-retries:2}") int maxRetries,
+                               @Value("${openai.activity-review.max-inspections:4}") int maxInspections,
+                               OpenAiRuntimeSettingsProvider settingsProvider) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(Math.min(timeoutSeconds, 20)));
         factory.setReadTimeout(Duration.ofSeconds(timeoutSeconds));
         this.restClient = RestClient.builder().baseUrl(apiUrl).requestFactory(factory).build();
         this.objectMapper = objectMapper;
-        this.apiKey = apiKey;
-        this.model = model;
-        this.maxOutputTokens = maxOutputTokens;
         this.maxRetries = maxRetries;
         this.maxInspections = maxInspections;
+        this.settingsProvider = settingsProvider;
     }
 
     @Override
     public Result review(ActivityReviewContext context, SegmentDetailsTool tool) {
-        if (apiKey == null || apiKey.isBlank()) {
+        OpenAiRuntimeSettingsProvider.Settings settings = settingsProvider.resolve(context.athleteId());
+        if (settings.apiKey() == null || settings.apiKey().isBlank()) {
             throw new ActivityReviewException("OPENAI_API_KEY não foi configurada");
         }
+        activeApiKey.set(settings.apiKey());
+        activeModel.set(settings.activityReviewModel());
         long startedAt = System.nanoTime();
         int inputTokens = 0;
         int outputTokens = 0;
         String responseId = null;
         List<Object> observations = new ArrayList<>();
 
+        try {
         for (int turn = 0; turn <= maxInspections; turn++) {
             JsonNode response = executeWithRetry(body(context, observations));
             responseId = response.path("id").asText(responseId);
@@ -104,10 +123,14 @@ public class OpenAiActivityCoach implements ActivityCoach {
             if (assessment.length() > 1500) {
                 throw new ActivityReviewException("A avaliação excedeu o limite de 1500 caracteres");
             }
-            return new Result(assessment, responseId, response.path("model").asText(model),
+            return new Result(assessment, responseId, response.path("model").asText(activeModel.get()),
                     inputTokens, outputTokens, Duration.ofNanos(System.nanoTime() - startedAt).toMillis());
         }
         throw new ActivityReviewException("A avaliação não foi concluída");
+        } finally {
+            activeApiKey.remove();
+            activeModel.remove();
+        }
     }
 
     JsonNode executeWithRetry(Map<String, Object> body) {
@@ -115,7 +138,7 @@ public class OpenAiActivityCoach implements ActivityCoach {
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             try {
                 return restClient.post().uri("/responses")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + activeApiKey.get())
                         .contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(JsonNode.class);
             } catch (RestClientResponseException exception) {
                 if (exception.getStatusCode().value() != 429 && !exception.getStatusCode().is5xxServerError()) {
@@ -135,11 +158,12 @@ public class OpenAiActivityCoach implements ActivityCoach {
         input.put("deterministic_context", context);
         input.put("detail_observations", observations);
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("model", model);
+        body.put("model", activeModel.get());
         body.put("instructions", INSTRUCTIONS);
         body.put("input", write(input));
         body.put("store", false);
-        body.put("max_output_tokens", maxOutputTokens);
+        OpenAiRuntimeSettingsProvider.Settings settings = settingsProvider.resolve(context.athleteId());
+        body.put("max_output_tokens", settings.activityReviewMaxOutputTokens());
         body.put("tools", List.of(toolDefinition()));
         body.put("text", Map.of("format", Map.of(
                 "type", "json_schema", "name", "activity_review", "strict", true,

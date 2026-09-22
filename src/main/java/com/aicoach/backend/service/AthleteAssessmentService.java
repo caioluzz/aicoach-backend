@@ -6,11 +6,13 @@ import com.aicoach.backend.enums.HealthIssueStatus;
 import com.aicoach.backend.models.*;
 import com.aicoach.backend.repository.AthleteAssessmentRepo;
 import com.aicoach.backend.repository.AthleteRepo;
+import com.aicoach.backend.repository.ActivityRepo;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.DayOfWeek;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -22,6 +24,7 @@ public class AthleteAssessmentService {
 
     private final AthleteRepo athleteRepo;
     private final AthleteAssessmentRepo assessmentRepo;
+    private final ActivityRepo activityRepo;
 
     @Transactional
     public AthleteAssessmentResponse createVersion(Long athleteId, AthleteAssessmentRequest request) {
@@ -34,6 +37,25 @@ public class AthleteAssessmentService {
                 .orElse(1);
 
         AthleteAssessment assessment = mapRequest(athlete, nextVersion, request);
+        synchronizeAthleteProfile(athlete, request);
+        return toResponse(assessmentRepo.save(assessment));
+    }
+
+    @Transactional
+    public AthleteAssessmentResponse completeOnboarding(Long athleteId) {
+        Athlete athlete = athleteRepo.findByIdForUpdate(athleteId)
+                .orElseThrow(() -> new AthleteNotFoundException(athleteId));
+        AthleteAssessment assessment = assessmentRepo.findTopByAthleteIdOrderByVersionDesc(athleteId)
+                .orElseThrow(() -> new AssessmentNotFoundException(athleteId));
+        if (athlete.getGarminEmail() == null || athlete.getGarminEmail().isBlank()
+                || athlete.getGarminPassword() == null || athlete.getGarminPassword().isBlank()) {
+            throw new AssessmentValidationException("Configure o Garmin antes de concluir o onboarding");
+        }
+        if (activityRepo.findByAthleteIdAndIsVdotTestTrue(athleteId).isEmpty()) {
+            throw new AssessmentValidationException("Confirme a atividade do teste de 3 km antes de concluir o onboarding");
+        }
+        assessment.setOnboardingStatus(com.aicoach.backend.enums.OnboardingStatus.COMPLETED);
+        if (assessment.getCompletedAt() == null) assessment.setCompletedAt(Instant.now());
         return toResponse(assessmentRepo.save(assessment));
     }
 
@@ -144,6 +166,31 @@ public class AthleteAssessmentService {
             return issue;
         }).toList()));
         return assessment;
+    }
+
+    private void synchronizeAthleteProfile(Athlete athlete, AthleteAssessmentRequest request) {
+        athlete.setDateOfBirth(request.physicalProfile().dateOfBirth());
+        athlete.setWeightKg(request.physicalProfile().weightKg());
+        athlete.setHeightCm(request.physicalProfile().heightCm());
+        athlete.setGender(request.physicalProfile().gender());
+        athlete.setAvailableTrainingDays(new HashSet<>(request.availability().stream()
+                .map(AthleteAssessmentRequest.Availability::dayOfWeek).toList()));
+
+        Objective objective = athlete.getObjectives() == null ? null : athlete.getObjectives().stream()
+                .filter(item -> item.getStatus() == com.aicoach.backend.enums.ObjectiveStatus.ACTIVE)
+                .findFirst().orElse(null);
+        if (objective == null) {
+            objective = new Objective();
+            objective.setAthlete(athlete);
+            objective.setStatus(com.aicoach.backend.enums.ObjectiveStatus.ACTIVE);
+            if (athlete.getObjectives() == null) athlete.setObjectives(new ArrayList<>());
+            athlete.getObjectives().add(objective);
+        }
+        objective.setTitle(request.targetRace().title());
+        objective.setTargetDate(request.targetRace().date());
+        objective.setTargetDistance_m(request.targetRace().distanceMeters());
+        objective.setPriority(request.targetRace().priority());
+        athleteRepo.save(athlete);
     }
 
     private AthleteAssessmentResponse toResponse(AthleteAssessment assessment) {

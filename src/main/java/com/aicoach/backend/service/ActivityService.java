@@ -1,6 +1,7 @@
 package com.aicoach.backend.service;
 
 import com.aicoach.backend.client.GarminBotClient;
+import com.aicoach.backend.client.GarminAdapterException;
 import com.aicoach.backend.dto.ActivitySyncResponse;
 import com.aicoach.backend.dto.ActivitySummaryResponse;
 import com.aicoach.backend.dto.GarminActivityMetadata;
@@ -201,7 +202,7 @@ public class ActivityService {
             return toResponse(state);
         } catch (RuntimeException exception) {
             state.setStatus(ActivitySyncStatus.FAILED);
-            state.setLastError("Falha na descoberta: " + exception.getClass().getSimpleName());
+            state.setLastError("Falha na descoberta: " + safeFailureMessage(exception));
             state = syncStateRepo.save(state);
             log.warn("activity_sync athlete_id={} status=failed phase=discover error_type={}",
                     athleteId, exception.getClass().getSimpleName());
@@ -231,12 +232,55 @@ public class ActivityService {
     public List<ActivitySummaryResponse> listActivities(Long athleteId) {
         if (!athleteRepo.existsById(athleteId)) throw new AthleteNotFoundException(athleteId);
         return activityRepo.findByAthleteIdOrderByStartedAtDesc(athleteId).stream()
-                .map(activity -> new ActivitySummaryResponse(activity.getId(), athleteId,
-                        activity.getGarminActivityId(), activity.getName(), activity.getStartedAt(),
-                        activity.getEndedAt(), activity.getDistanceMeters(), activity.getDurationSeconds(),
-                        activity.getSport(), activity.getIsVdotTest(), activity.getAvgPaceSPerKm(),
-                        activity.getAverageHeartRate(), activity.getAvgCadence()))
+                .map(this::toSummary)
                 .toList();
+    }
+
+    @Transactional
+    public ActivitySummaryResponse importGarminActivity(Long athleteId, Long garminActivityId) {
+        Athlete athlete = athleteRepo.findById(athleteId)
+                .orElseThrow(() -> new AthleteNotFoundException(athleteId));
+        Activity existing = activityRepo.findByGarminActivityId(garminActivityId).orElse(null);
+        if (existing != null) {
+            if (!existing.getAthlete().getId().equals(athleteId)) {
+                throw new IllegalArgumentException("A atividade Garmin já pertence a outro atleta");
+            }
+            if (!isRunning(existing)) {
+                GarminBotResponseDTO detail = downloadActivity(athlete, garminActivityId);
+                if (detail.sport() == null || detail.sport().isBlank()) {
+                    throw new GarminAdapterException(422,
+                            "O Garmin não informou o esporte da atividade, nem no resumo nem no arquivo FIT.", false);
+                }
+                existing.setSport(detail.sport());
+                existing.setSubSport(detail.subSport());
+                existing = activityRepo.saveAndFlush(existing);
+                compareIfRunning(existing);
+                log.info("activity_import athlete_id={} garmin_activity_id={} status=repaired",
+                        athleteId, garminActivityId);
+            }
+            return toSummary(existing);
+        }
+
+        GarminBotResponseDTO detail = downloadActivity(athlete, garminActivityId);
+        if (detail == null || !garminActivityId.equals(detail.activityId())) {
+            throw new IllegalStateException("Resposta Garmin não corresponde à atividade solicitada");
+        }
+        if (detail.startedAt() == null) {
+            throw new GarminAdapterException(422,
+                    "A atividade Garmin não informou uma data de início utilizável.", false);
+        }
+        Activity imported = activityRepo.saveAndFlush(mapToEntity(detail, athlete));
+        compareIfRunning(imported);
+        log.info("activity_import athlete_id={} garmin_activity_id={} status=imported",
+                athleteId, garminActivityId);
+        return toSummary(imported);
+    }
+
+    private GarminBotResponseDTO downloadActivity(Athlete athlete, Long garminActivityId) {
+        return retry(
+                () -> garminBotClient.downloadActivity(
+                        athlete.getGarminEmail(), athlete.getGarminPassword(), garminActivityId),
+                "direct_download", athlete.getId());
     }
 
     @Transactional
@@ -290,6 +334,10 @@ public class ActivityService {
                 lastFailure = exception;
                 log.warn("activity_sync athlete_id={} phase={} attempt={} max_attempts={} error_type={}",
                         athleteId, phase, attempt, attempts, exception.getClass().getSimpleName());
+                if (exception instanceof GarminAdapterException adapterFailure
+                        && !adapterFailure.isRetryable()) {
+                    throw adapterFailure;
+                }
                 if (attempt < attempts && retryDelayMs > 0) {
                     try {
                         Thread.sleep(retryDelayMs);
@@ -378,6 +426,22 @@ public class ActivityService {
             });
         }
         return activity;
+    }
+
+    private ActivitySummaryResponse toSummary(Activity activity) {
+        return new ActivitySummaryResponse(activity.getId(), activity.getAthlete().getId(),
+                activity.getGarminActivityId(), activity.getName(), activity.getStartedAt(),
+                activity.getEndedAt(), activity.getDistanceMeters(), activity.getDurationSeconds(),
+                activity.getSport(), activity.getIsVdotTest(), activity.getAvgPaceSPerKm(),
+                activity.getAverageHeartRate(), activity.getAvgCadence());
+    }
+
+    private String safeFailureMessage(RuntimeException exception) {
+        if (exception instanceof GarminAdapterException adapterException
+                && adapterException.getMessage() != null && !adapterException.getMessage().isBlank()) {
+            return adapterException.getMessage();
+        }
+        return exception.getClass().getSimpleName();
     }
 
     private void compareIfRunning(Activity activity) {

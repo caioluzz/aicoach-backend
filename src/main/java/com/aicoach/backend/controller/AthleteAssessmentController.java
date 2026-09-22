@@ -29,4 +29,9 @@ public class AthleteAssessmentController implements AthleteAssessmentApi {
     public List<AthleteAssessmentResponse> getHistory(Long athleteId) {
         return assessmentService.getHistory(athleteId);
     }
+
+    @Override
+    public AthleteAssessmentResponse completeOnboarding(Long athleteId) {
+        return assessmentService.completeOnboarding(athleteId);
+    }
 }

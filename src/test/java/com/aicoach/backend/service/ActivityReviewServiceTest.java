@@ -82,6 +82,9 @@ class ActivityReviewServiceTest {
         activity.setSport("running");
         activity.setDurationSeconds(duration);
         activity.setDistanceMeters(distance);
+        Athlete athlete = new Athlete();
+        athlete.setId(7L);
+        activity.setAthlete(athlete);
         ActivityComparison comparison = new ActivityComparison();
         comparison.setId(8L);
         comparison.setActivity(activity);

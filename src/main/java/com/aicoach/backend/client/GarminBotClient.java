@@ -11,12 +11,20 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.client.ResourceAccessException;
 
 import java.util.List;
 import java.time.LocalDateTime;
+import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Component
 public class GarminBotClient {
+    private static final Pattern DETAIL_PATTERN = Pattern.compile(
+            "\\\"detail\\\"\\s*:\\s*\\\"([^\\\"]{1,500})\\\"");
     private final RestClient restClient;
 
     public GarminBotClient(
@@ -39,12 +47,12 @@ public class GarminBotClient {
     public List<GarminBotResponseDTO> fetchActivities(String email, String password, int limit) {
         GarminBotRequestDTO requestPayload = new GarminBotRequestDTO(email, password, limit);
 
-        return restClient.post()
+        return invoke(() -> restClient.post()
                 .uri("/api/garmin/activities")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(requestPayload)
                 .retrieve()
-                .body(new ParameterizedTypeReference<List<GarminBotResponseDTO>>() {});
+                .body(new ParameterizedTypeReference<List<GarminBotResponseDTO>>() {}));
     }
 
     public List<GarminActivityMetadata> discoverActivities(
@@ -54,24 +62,54 @@ public class GarminBotClient {
             LocalDateTime since) {
         GarminActivityDiscoveryRequest request =
                 new GarminActivityDiscoveryRequest(email, password, limit, since);
-        return restClient.post()
+        return invoke(() -> restClient.post()
                 .uri("/api/garmin/activities/discover")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(request)
                 .retrieve()
-                .body(new ParameterizedTypeReference<List<GarminActivityMetadata>>() {});
+                .body(new ParameterizedTypeReference<List<GarminActivityMetadata>>() {}));
     }
 
     public GarminBotResponseDTO downloadActivity(
             String email,
             String password,
             Long activityId) {
-        return restClient.post()
+        return invoke(() -> restClient.post()
                 .uri("/api/garmin/activities/{activityId}/download", activityId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(new GarminActivityDownloadRequest(email, password))
                 .retrieve()
-                .body(GarminBotResponseDTO.class);
+                .body(GarminBotResponseDTO.class));
+    }
+
+    private <T> T invoke(Supplier<T> operation) {
+        try {
+            return operation.get();
+        } catch (RestClientResponseException exception) {
+            int status = exception.getStatusCode().value();
+            String detail = adapterDetail(exception.getResponseBodyAsString());
+            boolean retryable = status >= 500;
+            throw new GarminAdapterException(status, detail, retryable);
+        } catch (ResourceAccessException exception) {
+            throw new GarminAdapterException(503,
+                    "O adaptador Garmin local está indisponível.", true);
+        } catch (RestClientException exception) {
+            throw new GarminAdapterException(502,
+                    "O adaptador Garmin devolveu uma resposta incompatível.", false);
+        }
+    }
+
+    private String adapterDetail(String body) {
+        if (body != null) {
+            Matcher matcher = DETAIL_PATTERN.matcher(body);
+            if (matcher.find() && !matcher.group(1).isBlank()) {
+                return matcher.group(1)
+                        .replace("\\n", " ")
+                        .replace("\\r", " ")
+                        .replace("\\t", " ");
+            }
+        }
+        return "O adaptador Garmin não conseguiu concluir a operação.";
     }
 }
 
