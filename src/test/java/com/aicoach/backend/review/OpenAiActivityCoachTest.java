@@ -57,7 +57,7 @@ class OpenAiActivityCoachTest {
     }
 
     private ActivityReviewContext context() {
-        return new ActivityReviewContext(9L, 44L, LocalDateTime.of(2026, 9, 20, 7, 0),
+        return new ActivityReviewContext(7L, 9L, 44L, LocalDateTime.of(2026, 9, 20, 7, 0),
                 "Intervalado", "running", 2400.0, 6000.0, 160, (short) 88, null);
     }
 

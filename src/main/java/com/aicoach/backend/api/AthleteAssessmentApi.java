@@ -21,4 +21,7 @@ public interface AthleteAssessmentApi {
 
     @GetMapping
     List<AthleteAssessmentResponse> getHistory(@PathVariable Long athleteId);
+
+    @PostMapping("/complete")
+    AthleteAssessmentResponse completeOnboarding(@PathVariable Long athleteId);
 }

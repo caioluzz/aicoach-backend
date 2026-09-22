@@ -13,19 +13,30 @@ microsserviço Garmin. Este repositório é independente do repositório
 
 ## Execução local
 
-Defina os segredos apenas no ambiente. O arquivo `.env.example` lista os nomes,
-mas o Spring Boot não carrega `.env` automaticamente.
+Defina os segredos apenas no ambiente. Para desenvolvimento local, copie
+`.env.example` para `.env` na mesma pasta do `pom.xml`. O arquivo `.env` é ignorado
+pelo Git e agora é carregado tanto pelo Spring Boot quanto pelo Docker Compose.
 
 ```powershell
-$env:JAVA_HOME = 'C:\caminho\para\jdk-17'
-$env:DB_PASSWORD = 'senha-local-do-mysql'
-$env:GARMIN_ENCRYPTION_KEY = [Convert]::ToBase64String(
-  [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
-)
-$env:OPENAI_API_KEY = 'chave-local-da-openai'
+Copy-Item .env.example .env
+# Edite .env e substitua DB_PASSWORD e GARMIN_ENCRYPTION_KEY.
+# Para gerar a chave de criptografia (compatível com Windows PowerShell 5.1):
+$keyBytes = New-Object byte[] 32
+$rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+$rng.GetBytes($keyBytes)
+$garminEncryptionKey = [Convert]::ToBase64String($keyBytes)
+$rng.Dispose()
+$garminEncryptionKey
 docker compose up -d
 .\mvnw.cmd spring-boot:run
 ```
+
+No IntelliJ, abra `backend/aicoach-backend` como projeto Maven, selecione o JDK 17
+e execute `BackendApplication`. A configuração deve usar a pasta do `pom.xml` como
+working directory para encontrar o `.env`. `OPENAI_API_KEY` pode ficar vazia no
+primeiro boot e ser cadastrada depois pela tela **Configurações**; quando cadastrada
+pela interface, a chave é criptografada no banco e passa a ter precedência para o
+atleta local.
 
 Guarde a chave de criptografia local em um gerenciador de segredos: trocá-la torna
 as senhas Garmin já persistidas impossíveis de descriptografar. A chave e a senha
@@ -41,6 +52,13 @@ rotacionadas; esta etapa remove os valores do estado atual, sem reescrever hist�
 | `POST` | `/api/athletes/{id}/assessments` | Cria uma versão estruturada da anamnese |
 | `GET` | `/api/athletes/{id}/assessments/latest` | Consulta a anamnese mais recente |
 | `GET` | `/api/athletes/{id}/assessments` | Consulta o histórico versionado da anamnese |
+| `GET` | `/api/configuration/athletes/{id}` | Consulta apenas o estado mascarado do Garmin/OpenAI |
+| `PUT` | `/api/configuration/athletes/{id}/garmin` | Substitui credenciais Garmin; a senha nunca é devolvida |
+| `PUT` | `/api/configuration/athletes/{id}/openai` | Persiste chave, modelos e limites OpenAI criptografados |
+| `POST` | `/api/configuration/athletes/{id}/openai/test` | Valida chave e modelo sem devolver o segredo |
+| `POST` | `/api/athletes/{id}/vdot-test/workout/preview` | Pré-visualiza o workout estruturado de 3 km |
+| `POST` | `/api/athletes/{id}/vdot-test/workout/deliver` | Envia/agende o teste de 3 km com chave idempotente |
+| `POST` | `/api/athletes/{id}/planning-runs` | Sincroniza, processa o contexto e gera/reutiliza a proposta seguinte |
 | `POST` | `/api/athletes/{id}/season-plans` | Gera e valida uma proposta de plano geral |
 | `GET` | `/api/athletes/{id}/season-plans/latest` | Consulta a versão mais recente do plano |
 | `GET` | `/api/athletes/{id}/season-plans` | Consulta o histórico de planos |
@@ -61,6 +79,8 @@ rotacionadas; esta etapa remove os valores do estado atual, sem reescrever hist�
 | `POST` | `/api/v1/activities/sync/{athleteId}` | Executa a sincronização manual de um atleta |
 | `GET` | `/api/v1/activities/sync/status` | Consulta status e contadores da sincronização |
 | `GET` | `/api/v1/activities/sync/status/{athleteId}` | Consulta o status de um atleta |
+| `GET` | `/api/v1/activities/athletes/{athleteId}` | Lista atividades resumidas para seleção do teste |
+| `POST` | `/api/v1/activities/athletes/{athleteId}/{activityId}/vdot-test/confirm` | Confirma atividade de 3 km e calcula VDOT/ritmos |
 | `POST` | `/api/v1/activities/{activityId}/comparison` | Calcula ou recalcula o cumprimento |
 | `GET` | `/api/v1/activities/{activityId}/comparison` | Consulta o cumprimento persistido |
 | `POST` | `/api/v1/activities/{activityId}/review` | Gera ou reutiliza a avaliação curta da atividade |
@@ -97,7 +117,7 @@ descobre metadados com uma janela de recuperação e baixa o FIT apenas de IDs a
 
 ## Persistência mapeada
 
-As migrations V1–V17 criam atleta, credenciais Garmin, resumo de atividade, indicador
+As migrations V1–V18 criam atleta, credenciais Garmin, resumo de atividade, indicador
 de teste VDOT, laps, telemetria e o esquema ainda não usado de planejamento. O fluxo
 atual persiste o resumo recebido do microsserviço e, por cascata JPA, seus laps e
 registros de telemetria. A V8 adiciona snapshots versionados da anamnese,
@@ -116,6 +136,8 @@ A V16 registra feedback por atividade ou dia, decisões determinísticas version
 propostas auditáveis para sessões futuras ainda não executadas.
 A V17 registra provas intermediárias e o overlay auditável de ajustes sobre semanas
 atuais ou adjacentes, sem substituir a prova-alvo nem reescrever o plano geral.
+A V18 guarda por atleta a configuração OpenAI criptografada, os modelos, limites e
+o instante da última validação, sem expor a chave nas respostas da API.
 
 ## Testes
 

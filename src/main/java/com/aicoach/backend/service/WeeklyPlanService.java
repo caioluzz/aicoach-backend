@@ -56,6 +56,40 @@ public class WeeklyPlanService {
         return toResponse(weeklyPlanRepo.save(weeklyPlan));
     }
 
+    /**
+     * Creates the validated regular proposal first, then narrows it to the
+     * remaining days of the current week. This keeps all existing health,
+     * load and workout validation in one path while preventing retroactive
+     * sessions after a newly confirmed 3 km test.
+     */
+    @Transactional
+    public WeeklyPlanResponse createBridge(Long athleteId, WeeklyPlanCreateRequest request,
+                                            java.time.LocalDate bridgeStart, java.time.LocalDate bridgeEnd) {
+        if (bridgeStart.isAfter(bridgeEnd)) {
+            throw new WeeklyPlanPrerequisiteException("O período do plano-ponte é inválido");
+        }
+        WeeklyPlanResponse generated = create(athleteId, request);
+        WeeklyPlan plan = weeklyPlanRepo.findByIdAndAthleteId(generated.id(), athleteId)
+                .orElseThrow(() -> new WeeklyPlanNotFoundException(generated.id()));
+        List<PlannedActivity> retained = plan.getSessions().stream()
+                .filter(session -> !session.getScheduledDate().isBefore(bridgeStart)
+                        && !session.getScheduledDate().isAfter(bridgeEnd))
+                .toList();
+        plan.getSessions().removeIf(session -> session.getScheduledDate().isBefore(bridgeStart)
+                || session.getScheduledDate().isAfter(bridgeEnd));
+        plan.setWeekStart(bridgeStart);
+        plan.setWeekEnd(bridgeEnd);
+        int distance = retained.stream().map(PlannedActivity::getPlannedDistanceMeters)
+                .filter(java.util.Objects::nonNull).mapToInt(Integer::intValue).sum();
+        int duration = retained.stream().map(PlannedActivity::getPlannedDurationSeconds)
+                .filter(java.util.Objects::nonNull).mapToInt(Integer::intValue).sum();
+        plan.setPlannedDistanceMeters(distance);
+        plan.setPlannedDurationSeconds(duration);
+        plan.setTargetVolumeKm(distance / 1000.0);
+        plan.setSummary("Plano-ponte até domingo — " + plan.getSummary());
+        return toResponse(weeklyPlanRepo.save(plan));
+    }
+
     @Transactional(readOnly = true)
     public WeeklyPlanResponse get(Long athleteId, Long weeklyPlanId) {
         ensureAthleteExists(athleteId);

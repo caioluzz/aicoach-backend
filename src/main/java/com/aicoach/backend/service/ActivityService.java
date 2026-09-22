@@ -1,14 +1,19 @@
 package com.aicoach.backend.service;
 
 import com.aicoach.backend.client.GarminBotClient;
+import com.aicoach.backend.client.GarminAdapterException;
 import com.aicoach.backend.dto.ActivitySyncResponse;
+import com.aicoach.backend.dto.ActivitySummaryResponse;
 import com.aicoach.backend.dto.GarminActivityMetadata;
 import com.aicoach.backend.dto.GarminBotResponseDTO;
+import com.aicoach.backend.dto.VdotTestConfirmationResponse;
 import com.aicoach.backend.enums.ActivitySyncStatus;
 import com.aicoach.backend.models.*;
 import com.aicoach.backend.repository.ActivityRepo;
 import com.aicoach.backend.repository.ActivitySyncStateRepo;
+import com.aicoach.backend.repository.AthleteMetricsRepo;
 import com.aicoach.backend.repository.AthleteRepo;
+import com.aicoach.backend.training.daniels.DanielsIntensity;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -19,10 +24,13 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -36,8 +44,11 @@ public class ActivityService {
     private final ActivityRepo activityRepo;
     private final AthleteRepo athleteRepo;
     private final ActivitySyncStateRepo syncStateRepo;
+    private final AthleteMetricsRepo athleteMetricsRepo;
     private final GarminBotClient garminBotClient;
     private final ActivityComparisonService activityComparisonService;
+    private final Clock clock;
+    private final com.aicoach.backend.training.daniels.DanielsPerformanceEngine performanceEngine;
     private final AtomicBoolean allAthletesSyncRunning = new AtomicBoolean(false);
     private final Set<Long> activeAthleteSyncs = ConcurrentHashMap.newKeySet();
 
@@ -191,7 +202,7 @@ public class ActivityService {
             return toResponse(state);
         } catch (RuntimeException exception) {
             state.setStatus(ActivitySyncStatus.FAILED);
-            state.setLastError("Falha na descoberta: " + exception.getClass().getSimpleName());
+            state.setLastError("Falha na descoberta: " + safeFailureMessage(exception));
             state = syncStateRepo.save(state);
             log.warn("activity_sync athlete_id={} status=failed phase=discover error_type={}",
                     athleteId, exception.getClass().getSimpleName());
@@ -217,6 +228,102 @@ public class ActivityService {
                         athleteId, ActivitySyncStatus.NEVER_RUN, null, null, null, 0, 0, 0, null));
     }
 
+    @Transactional
+    public List<ActivitySummaryResponse> listActivities(Long athleteId) {
+        if (!athleteRepo.existsById(athleteId)) throw new AthleteNotFoundException(athleteId);
+        return activityRepo.findByAthleteIdOrderByStartedAtDesc(athleteId).stream()
+                .map(this::toSummary)
+                .toList();
+    }
+
+    @Transactional
+    public ActivitySummaryResponse importGarminActivity(Long athleteId, Long garminActivityId) {
+        Athlete athlete = athleteRepo.findById(athleteId)
+                .orElseThrow(() -> new AthleteNotFoundException(athleteId));
+        Activity existing = activityRepo.findByGarminActivityId(garminActivityId).orElse(null);
+        if (existing != null) {
+            if (!existing.getAthlete().getId().equals(athleteId)) {
+                throw new IllegalArgumentException("A atividade Garmin já pertence a outro atleta");
+            }
+            if (!isRunning(existing)) {
+                GarminBotResponseDTO detail = downloadActivity(athlete, garminActivityId);
+                if (detail.sport() == null || detail.sport().isBlank()) {
+                    throw new GarminAdapterException(422,
+                            "O Garmin não informou o esporte da atividade, nem no resumo nem no arquivo FIT.", false);
+                }
+                existing.setSport(detail.sport());
+                existing.setSubSport(detail.subSport());
+                existing = activityRepo.saveAndFlush(existing);
+                compareIfRunning(existing);
+                log.info("activity_import athlete_id={} garmin_activity_id={} status=repaired",
+                        athleteId, garminActivityId);
+            }
+            return toSummary(existing);
+        }
+
+        GarminBotResponseDTO detail = downloadActivity(athlete, garminActivityId);
+        if (detail == null || !garminActivityId.equals(detail.activityId())) {
+            throw new IllegalStateException("Resposta Garmin não corresponde à atividade solicitada");
+        }
+        if (detail.startedAt() == null) {
+            throw new GarminAdapterException(422,
+                    "A atividade Garmin não informou uma data de início utilizável.", false);
+        }
+        Activity imported = activityRepo.saveAndFlush(mapToEntity(detail, athlete));
+        compareIfRunning(imported);
+        log.info("activity_import athlete_id={} garmin_activity_id={} status=imported",
+                athleteId, garminActivityId);
+        return toSummary(imported);
+    }
+
+    private GarminBotResponseDTO downloadActivity(Athlete athlete, Long garminActivityId) {
+        return retry(
+                () -> garminBotClient.downloadActivity(
+                        athlete.getGarminEmail(), athlete.getGarminPassword(), garminActivityId),
+                "direct_download", athlete.getId());
+    }
+
+    @Transactional
+    public VdotTestConfirmationResponse confirmVdotTest(Long athleteId, Long activityId) {
+        Activity activity = activityRepo.findByIdAndAthleteId(activityId, athleteId)
+                .orElseThrow(() -> new IllegalArgumentException("Atividade não pertence ao atleta"));
+        if (activity.getSport() == null || !activity.getSport().toLowerCase().contains("run")) {
+            throw new IllegalArgumentException("Somente uma atividade de corrida pode ser confirmada como teste");
+        }
+        if (activity.getDistanceMeters() == null || activity.getDurationSeconds() == null) {
+            throw new IllegalArgumentException("A atividade não possui distância e duração suficientes");
+        }
+        int distance = (int) Math.round(activity.getDistanceMeters());
+        int duration = (int) Math.round(activity.getDurationSeconds());
+        var profile = performanceEngine.fromThreeKmTest(distance, duration);
+        activityRepo.findByAthleteIdAndIsVdotTestTrue(athleteId).ifPresent(previous -> {
+            previous.setIsVdotTest(false);
+            activityRepo.save(previous);
+        });
+        activity.setIsVdotTest(true);
+        activityRepo.save(activity);
+
+        Athlete athlete = athleteRepo.findById(athleteId)
+                .orElseThrow(() -> new AthleteNotFoundException(athleteId));
+        AthleteMetrics metrics = new AthleteMetrics();
+        metrics.setAthlete(athlete);
+        metrics.setRecordedAt(LocalDateTime.ofInstant(profile.calculatedAt(), clock.getZone()));
+        metrics.setVdot(profile.vdot());
+        metrics.setEasyPaceSec(profile.paces().get(DanielsIntensity.E).slowestSecondsPerKm());
+        metrics.setMarathonPaceSec(profile.paces().get(DanielsIntensity.M).slowestSecondsPerKm());
+        metrics.setThresholdPaceSec(profile.paces().get(DanielsIntensity.T).slowestSecondsPerKm());
+        metrics.setIntervalPaceSec(profile.paces().get(DanielsIntensity.I).slowestSecondsPerKm());
+        metrics.setRepetitionPaceSec(profile.paces().get(DanielsIntensity.R).slowestSecondsPerKm());
+        athleteMetricsRepo.save(metrics);
+
+        Map<String, VdotTestConfirmationResponse.PaceRange> paces = new LinkedHashMap<>();
+        profile.paces().forEach((intensity, pace) -> paces.put(intensity.name(),
+                new VdotTestConfirmationResponse.PaceRange(pace.fastestSecondsPerKm(), pace.slowestSecondsPerKm())));
+        return new VdotTestConfirmationResponse(activityId, athleteId, distance, duration,
+                new VdotTestConfirmationResponse.PerformanceProfile(profile.vdot(), profile.engineVersion(),
+                        profile.coefficientSet(), profile.calculatedAt(), paces));
+    }
+
     private <T> T retry(Supplier<T> operation, String phase, Long athleteId) {
         RuntimeException lastFailure = null;
         int attempts = Math.max(1, maxAttempts);
@@ -227,6 +334,10 @@ public class ActivityService {
                 lastFailure = exception;
                 log.warn("activity_sync athlete_id={} phase={} attempt={} max_attempts={} error_type={}",
                         athleteId, phase, attempt, attempts, exception.getClass().getSimpleName());
+                if (exception instanceof GarminAdapterException adapterFailure
+                        && !adapterFailure.isRetryable()) {
+                    throw adapterFailure;
+                }
                 if (attempt < attempts && retryDelayMs > 0) {
                     try {
                         Thread.sleep(retryDelayMs);
@@ -315,6 +426,22 @@ public class ActivityService {
             });
         }
         return activity;
+    }
+
+    private ActivitySummaryResponse toSummary(Activity activity) {
+        return new ActivitySummaryResponse(activity.getId(), activity.getAthlete().getId(),
+                activity.getGarminActivityId(), activity.getName(), activity.getStartedAt(),
+                activity.getEndedAt(), activity.getDistanceMeters(), activity.getDurationSeconds(),
+                activity.getSport(), activity.getIsVdotTest(), activity.getAvgPaceSPerKm(),
+                activity.getAverageHeartRate(), activity.getAvgCadence());
+    }
+
+    private String safeFailureMessage(RuntimeException exception) {
+        if (exception instanceof GarminAdapterException adapterException
+                && adapterException.getMessage() != null && !adapterException.getMessage().isBlank()) {
+            return adapterException.getMessage();
+        }
+        return exception.getClass().getSimpleName();
     }
 
     private void compareIfRunning(Activity activity) {

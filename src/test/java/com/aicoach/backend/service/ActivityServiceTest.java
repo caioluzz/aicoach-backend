@@ -1,6 +1,7 @@
 package com.aicoach.backend.service;
 
 import com.aicoach.backend.client.GarminBotClient;
+import com.aicoach.backend.client.GarminAdapterException;
 import com.aicoach.backend.dto.*;
 import com.aicoach.backend.enums.ActivitySyncStatus;
 import com.aicoach.backend.models.Activity;
@@ -144,6 +145,62 @@ class ActivityServiceTest {
         assertTrue(response.lastError().contains("IllegalStateException"));
         verify(garminBotClient, times(2))
                 .discoverActivities(anyString(), anyString(), anyInt(), isNull());
+    }
+
+    @Test
+    void importsOneActivityDirectlyByGarminIdWithoutDiscovery() {
+        LocalDateTime startedAt = LocalDateTime.of(2026, 9, 18, 6, 30);
+        when(activityRepo.findByGarminActivityId(99L)).thenReturn(Optional.empty());
+        when(garminBotClient.downloadActivity("runner@example.test", "credential", 99L))
+                .thenReturn(activityDetail(99L, startedAt));
+        when(activityRepo.saveAndFlush(any())).thenAnswer(invocation -> {
+            Activity activity = invocation.getArgument(0);
+            activity.setId(55L);
+            return activity;
+        });
+
+        ActivitySummaryResponse response = activityService.importGarminActivity(7L, 99L);
+
+        assertEquals(55L, response.id());
+        assertEquals(99L, response.garminActivityId());
+        verify(garminBotClient, never()).discoverActivities(anyString(), anyString(), anyInt(), any());
+        verify(garminBotClient).downloadActivity("runner@example.test", "credential", 99L);
+    }
+
+    @Test
+    void doesNotRetryRejectedCredentialsDuringDirectImport() {
+        when(activityRepo.findByGarminActivityId(99L)).thenReturn(Optional.empty());
+        when(garminBotClient.downloadActivity(anyString(), anyString(), eq(99L)))
+                .thenThrow(new GarminAdapterException(401, "Credenciais rejeitadas", false));
+
+        GarminAdapterException failure = assertThrows(GarminAdapterException.class,
+                () -> activityService.importGarminActivity(7L, 99L));
+
+        assertEquals(401, failure.getStatusCode());
+        verify(garminBotClient, times(1)).downloadActivity(anyString(), anyString(), eq(99L));
+    }
+
+    @Test
+    void repairsMissingSportWhenDirectImportAlreadyExists() {
+        LocalDateTime startedAt = LocalDateTime.of(2026, 9, 21, 20, 48);
+        Activity existing = new Activity();
+        existing.setId(55L);
+        existing.setAthlete(athlete);
+        existing.setGarminActivityId(99L);
+        existing.setName("Teste 3km");
+        existing.setStartedAt(startedAt);
+        existing.setDistanceMeters(3014.83);
+        existing.setDurationSeconds(1142.936);
+        existing.setIsVdotTest(true);
+        when(activityRepo.findByGarminActivityId(99L)).thenReturn(Optional.of(existing));
+        when(garminBotClient.downloadActivity("runner@example.test", "credential", 99L))
+                .thenReturn(activityDetail(99L, startedAt));
+        when(activityRepo.saveAndFlush(existing)).thenReturn(existing);
+
+        ActivitySummaryResponse response = activityService.importGarminActivity(7L, 99L);
+
+        assertEquals("running", response.sport());
+        verify(activityRepo).saveAndFlush(existing);
     }
 
     private GarminBotResponseDTO activityDetail(Long id, LocalDateTime startedAt) {

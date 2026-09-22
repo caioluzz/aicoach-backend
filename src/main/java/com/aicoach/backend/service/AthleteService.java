@@ -1,6 +1,7 @@
 package com.aicoach.backend.service;
 
 import com.aicoach.backend.dto.AthleteRequestDTO;
+import com.aicoach.backend.dto.AthleteSummaryResponse;
 import com.aicoach.backend.enums.ObjectiveStatus;
 import com.aicoach.backend.enums.RacePriority;
 import com.aicoach.backend.models.Athlete;
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -29,7 +31,8 @@ public class AthleteService {
         athlete.setWeightKg(request.weightKg());
         athlete.setHeightCm(request.heightCm());
         athlete.setGender(request.gender());
-        athlete.setAvailableTrainingDays(request.availableTrainingDays());
+        athlete.setAvailableTrainingDays(request.availableTrainingDays() == null
+                ? Set.of() : request.availableTrainingDays());
 
         if (request.objectives() != null && !request.objectives().isEmpty()) {
             List<Objective> objectives = request.objectives().stream().map(objDto -> {
@@ -52,7 +55,11 @@ public class AthleteService {
         return athleteRepo.save(athlete);
     }
 
-    public List<Athlete> getAllAthletes() {
-        return athleteRepo.findAll();
+    @Transactional(readOnly = true)
+    public List<AthleteSummaryResponse> getAllAthletes() {
+        return athleteRepo.findAll().stream()
+                .map(athlete -> new AthleteSummaryResponse(athlete.getId(), athlete.getName(),
+                        athlete.getGarminEmail(), athlete.getDateOfBirth()))
+                .toList();
     }
 }

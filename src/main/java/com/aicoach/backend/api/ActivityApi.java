@@ -4,6 +4,10 @@ import com.aicoach.backend.models.Activity;
 import com.aicoach.backend.dto.ActivitySyncResponse;
 import com.aicoach.backend.dto.ActivityComparisonResponse;
 import com.aicoach.backend.dto.ActivityReviewResponse;
+import com.aicoach.backend.dto.ActivitySummaryResponse;
+import com.aicoach.backend.dto.VdotTestConfirmationResponse;
+import com.aicoach.backend.dto.GarminActivityImportRequest;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -52,4 +56,15 @@ public interface ActivityApi {
     @PostMapping("/comparisons/athletes/{athleteId}/reconcile")
     ResponseEntity<List<ActivityComparisonResponse>> reconcileComparisons(
             @PathVariable Long athleteId, @RequestParam(required = false) LocalDate throughDate);
+
+    @GetMapping("/athletes/{athleteId}")
+    ResponseEntity<List<ActivitySummaryResponse>> listActivities(@PathVariable Long athleteId);
+
+    @PostMapping("/athletes/{athleteId}/import")
+    ResponseEntity<ActivitySummaryResponse> importActivity(@PathVariable Long athleteId,
+                                                            @Valid @RequestBody GarminActivityImportRequest request);
+
+    @PostMapping("/athletes/{athleteId}/{activityId}/vdot-test/confirm")
+    ResponseEntity<VdotTestConfirmationResponse> confirmVdotTest(@PathVariable Long athleteId,
+                                                                  @PathVariable Long activityId);
 }

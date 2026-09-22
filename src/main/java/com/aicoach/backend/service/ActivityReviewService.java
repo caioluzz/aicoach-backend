@@ -63,7 +63,8 @@ public class ActivityReviewService {
         review.setAssessment(null);
         reviewRepo.saveAndFlush(review);
         ActivityComparisonResponse summary = comparisonService.getForActivity(activityId);
-        ActivityReviewContext context = new ActivityReviewContext(review.getId(), activityId,
+        ActivityReviewContext context = new ActivityReviewContext(comparison.getActivity().getAthlete().getId(),
+                review.getId(), activityId,
                 comparison.getActivity().getStartedAt(), comparison.getActivity().getName(),
                 comparison.getActivity().getSport(), comparison.getActivity().getDurationSeconds(),
                 comparison.getActivity().getDistanceMeters(), comparison.getActivity().getAverageHeartRate(),

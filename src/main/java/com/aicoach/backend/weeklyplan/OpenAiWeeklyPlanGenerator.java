@@ -1,10 +1,12 @@
 package com.aicoach.backend.weeklyplan;
 
+import com.aicoach.backend.config.OpenAiRuntimeSettingsProvider;
 import com.aicoach.backend.enums.DurationType;
 import com.aicoach.backend.enums.WorkoutType;
 import com.aicoach.backend.training.daniels.DanielsIntensity;
 import com.aicoach.backend.training.workout.WorkoutStepDefinition;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -36,10 +38,9 @@ public class OpenAiWeeklyPlanGenerator implements WeeklyPlanGenerator {
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
-    private final String apiKey;
-    private final String model;
-    private final int maxOutputTokens;
     private final int maxRetries;
+    private final OpenAiRuntimeSettingsProvider settingsProvider;
+    private final ThreadLocal<String> activeApiKey = new ThreadLocal<>();
 
     public OpenAiWeeklyPlanGenerator(ObjectMapper objectMapper,
                                      @Value("${openai.api.url:https://api.openai.com/v1}") String apiUrl,
@@ -48,37 +49,56 @@ public class OpenAiWeeklyPlanGenerator implements WeeklyPlanGenerator {
                                      @Value("${openai.weekly.max-output-tokens:12000}") int maxOutputTokens,
                                      @Value("${openai.timeout-seconds:60}") int timeoutSeconds,
                                      @Value("${openai.max-retries:2}") int maxRetries) {
+        this(objectMapper, apiUrl, apiKey, model, maxOutputTokens, timeoutSeconds, maxRetries,
+                athleteId -> new OpenAiRuntimeSettingsProvider.Settings(apiKey, model, model, model,
+                        maxOutputTokens, maxOutputTokens, maxOutputTokens));
+    }
+
+    @Autowired
+    public OpenAiWeeklyPlanGenerator(ObjectMapper objectMapper,
+                                     @Value("${openai.api.url:https://api.openai.com/v1}") String apiUrl,
+                                     @Value("${openai.api.key:}") String apiKey,
+                                     @Value("${openai.model.weekly-planner:gpt-5-mini}") String model,
+                                     @Value("${openai.weekly.max-output-tokens:12000}") int maxOutputTokens,
+                                     @Value("${openai.timeout-seconds:60}") int timeoutSeconds,
+                                     @Value("${openai.max-retries:2}") int maxRetries,
+                                     OpenAiRuntimeSettingsProvider settingsProvider) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofSeconds(Math.min(timeoutSeconds, 20)));
         requestFactory.setReadTimeout(Duration.ofSeconds(timeoutSeconds));
         this.restClient = RestClient.builder().baseUrl(apiUrl).requestFactory(requestFactory).build();
         this.objectMapper = objectMapper;
-        this.apiKey = apiKey;
-        this.model = model;
-        this.maxOutputTokens = maxOutputTokens;
         this.maxRetries = maxRetries;
+        this.settingsProvider = settingsProvider;
     }
 
     @Override
     public WeeklyPlanGenerationResult generate(WeeklyPlanGenerationContext context) {
-        if (apiKey == null || apiKey.isBlank()) {
+        OpenAiRuntimeSettingsProvider.Settings settings = settingsProvider.resolve(context.athleteId());
+        if (settings.apiKey() == null || settings.apiKey().isBlank()) {
             throw new OpenAiWeeklyPlanException("OPENAI_API_KEY não foi configurada");
         }
+        String selectedModel = settings.weeklyPlannerModel();
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("model", model);
+        body.put("model", selectedModel);
         body.put("instructions", INSTRUCTIONS);
         body.put("input", serializeContext(context));
         body.put("store", false);
-        body.put("max_output_tokens", maxOutputTokens);
+        body.put("max_output_tokens", settings.weeklyMaxOutputTokens());
         body.put("text", Map.of("format", Map.of(
                 "type", "json_schema", "name", "weekly_plan",
                 "description", "Microciclo semanal detalhado de corrida", "strict", true,
                 "schema", schema())));
 
         long startedAt = System.nanoTime();
-        JsonNode response = executeWithRetry(body);
-        long latencyMs = Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
-        return parseResponse(response, latencyMs);
+        activeApiKey.set(settings.apiKey());
+        try {
+            JsonNode response = executeWithRetry(body);
+            long latencyMs = Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
+            return parseResponse(response, latencyMs, selectedModel);
+        } finally {
+            activeApiKey.remove();
+        }
     }
 
     JsonNode executeWithRetry(Map<String, Object> body) {
@@ -86,7 +106,7 @@ public class OpenAiWeeklyPlanGenerator implements WeeklyPlanGenerator {
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             try {
                 return restClient.post().uri("/responses")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + activeApiKey.get())
                         .contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(JsonNode.class);
             } catch (RestClientResponseException exception) {
                 if (exception.getStatusCode().value() != 429 && !exception.getStatusCode().is5xxServerError()) {
@@ -102,7 +122,7 @@ public class OpenAiWeeklyPlanGenerator implements WeeklyPlanGenerator {
                 lastFailure);
     }
 
-    private WeeklyPlanGenerationResult parseResponse(JsonNode response, long latencyMs) {
+    private WeeklyPlanGenerationResult parseResponse(JsonNode response, long latencyMs, String selectedModel) {
         if (response == null || !"completed".equals(response.path("status").asText())) {
             String reason = response == null ? "resposta vazia"
                     : response.path("incomplete_details").path("reason").asText("status não concluído");
@@ -127,7 +147,7 @@ public class OpenAiWeeklyPlanGenerator implements WeeklyPlanGenerator {
             WeeklyPlanProposal proposal = objectMapper.readValue(outputText, WeeklyPlanProposal.class);
             JsonNode usage = response.path("usage");
             return new WeeklyPlanGenerationResult(proposal, response.path("id").asText(null),
-                    response.path("model").asText(model), nullableInt(usage, "input_tokens"),
+                    response.path("model").asText(selectedModel), nullableInt(usage, "input_tokens"),
                     nullableInt(usage, "output_tokens"), latencyMs);
         } catch (JacksonException exception) {
             throw new OpenAiWeeklyPlanException("A saída semanal não pôde ser desserializada", exception);

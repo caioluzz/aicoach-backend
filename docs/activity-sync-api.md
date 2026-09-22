@@ -18,6 +18,7 @@ idempotência. Execuções concorrentes do mesmo atleta são ignoradas no proces
 | `POST` | `/api/v1/activities/sync/{athleteId}` | Sincroniza um atleta agora |
 | `GET` | `/api/v1/activities/sync/status` | Estado mais recente de todos os atletas |
 | `GET` | `/api/v1/activities/sync/status/{athleteId}` | Estado mais recente de um atleta |
+| `POST` | `/api/v1/activities/athletes/{athleteId}/import` | Importa diretamente uma atividade pelo `garminActivityId` |
 
 Cada resposta informa `status`, checkpoint, horários de tentativa/sucesso,
 quantidades descoberta/importada/ignorada e o último erro sanitizado. Os estados são
@@ -40,3 +41,11 @@ As variáveis `GARMIN_SYNC_FIXED_DELAY_MS` e `GARMIN_SYNC_INITIAL_DELAY_MS` vale
 `GARMIN_SYNC_READ_TIMEOUT_MS`.
 
 Os testes usam mocks/fakes e nunca chamam a Garmin real.
+
+## Importação direta por link
+
+O frontend extrai o identificador numérico de uma URL `connect.garmin.com/.../activity/{id}`
+e envia `{ "garminActivityId": 123 }` ao endpoint de importação. O backend solicita
+somente essa atividade ao adaptador, valida que o ID devolvido é o solicitado e preserva
+a idempotência pelo índice único. Essa rota não depende da atividade estar entre as
+100 mais recentes.

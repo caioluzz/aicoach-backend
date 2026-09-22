@@ -1,10 +1,12 @@
 package com.aicoach.backend.seasonplan;
 
 import com.aicoach.backend.enums.TrainingPhase;
+import com.aicoach.backend.config.OpenAiRuntimeSettingsProvider;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -28,10 +30,9 @@ public class OpenAiSeasonPlanGenerator implements SeasonPlanGenerator {
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
-    private final String apiKey;
-    private final String model;
-    private final int maxOutputTokens;
     private final int maxRetries;
+    private final OpenAiRuntimeSettingsProvider settingsProvider;
+    private final ThreadLocal<String> activeApiKey = new ThreadLocal<>();
 
     public OpenAiSeasonPlanGenerator(ObjectMapper objectMapper,
                                      @Value("${openai.api.url:https://api.openai.com/v1}") String apiUrl,
@@ -40,28 +41,42 @@ public class OpenAiSeasonPlanGenerator implements SeasonPlanGenerator {
                                      @Value("${openai.max-output-tokens:8000}") int maxOutputTokens,
                                      @Value("${openai.timeout-seconds:60}") int timeoutSeconds,
                                      @Value("${openai.max-retries:2}") int maxRetries) {
+        this(objectMapper, apiUrl, apiKey, model, maxOutputTokens, timeoutSeconds, maxRetries,
+                athleteId -> new OpenAiRuntimeSettingsProvider.Settings(apiKey, model, model, model,
+                        maxOutputTokens, maxOutputTokens, maxOutputTokens));
+    }
+
+    @Autowired
+    public OpenAiSeasonPlanGenerator(ObjectMapper objectMapper,
+                                     @Value("${openai.api.url:https://api.openai.com/v1}") String apiUrl,
+                                     @Value("${openai.api.key:}") String apiKey,
+                                     @Value("${openai.model.planner:gpt-5-mini}") String model,
+                                     @Value("${openai.max-output-tokens:8000}") int maxOutputTokens,
+                                     @Value("${openai.timeout-seconds:60}") int timeoutSeconds,
+                                     @Value("${openai.max-retries:2}") int maxRetries,
+                                     OpenAiRuntimeSettingsProvider settingsProvider) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofSeconds(Math.min(timeoutSeconds, 20)));
         requestFactory.setReadTimeout(Duration.ofSeconds(timeoutSeconds));
         this.restClient = RestClient.builder().baseUrl(apiUrl).requestFactory(requestFactory).build();
         this.objectMapper = objectMapper;
-        this.apiKey = apiKey;
-        this.model = model;
-        this.maxOutputTokens = maxOutputTokens;
         this.maxRetries = maxRetries;
+        this.settingsProvider = settingsProvider;
     }
 
     @Override
     public SeasonPlanGenerationResult generate(SeasonPlanGenerationContext context) {
-        if (apiKey == null || apiKey.isBlank()) {
+        OpenAiRuntimeSettingsProvider.Settings settings = settingsProvider.resolve(context.athleteId());
+        if (settings.apiKey() == null || settings.apiKey().isBlank()) {
             throw new OpenAiSeasonPlanException("OPENAI_API_KEY não foi configurada");
         }
+        String selectedModel = settings.plannerModel();
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("model", model);
+        body.put("model", selectedModel);
         body.put("instructions", INSTRUCTIONS);
         body.put("input", serializeContext(context));
         body.put("store", false);
-        body.put("max_output_tokens", maxOutputTokens);
+        body.put("max_output_tokens", settings.maxOutputTokens());
         body.put("text", Map.of("format", Map.of(
                 "type", "json_schema",
                 "name", "season_plan",
@@ -70,9 +85,14 @@ public class OpenAiSeasonPlanGenerator implements SeasonPlanGenerator {
                 "schema", schema())));
 
         long startedAt = System.nanoTime();
-        JsonNode response = executeWithRetry(body);
-        long latencyMs = Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
-        return parseResponse(response, latencyMs);
+        activeApiKey.set(settings.apiKey());
+        try {
+            JsonNode response = executeWithRetry(body);
+            long latencyMs = Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
+            return parseResponse(response, latencyMs, selectedModel);
+        } finally {
+            activeApiKey.remove();
+        }
     }
 
     JsonNode executeWithRetry(Map<String, Object> body) {
@@ -80,7 +100,7 @@ public class OpenAiSeasonPlanGenerator implements SeasonPlanGenerator {
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             try {
                 return restClient.post().uri("/responses")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + activeApiKey.get())
                         .contentType(MediaType.APPLICATION_JSON)
                         .body(body)
                         .retrieve()
@@ -99,7 +119,7 @@ public class OpenAiSeasonPlanGenerator implements SeasonPlanGenerator {
                 lastFailure);
     }
 
-    private SeasonPlanGenerationResult parseResponse(JsonNode response, long latencyMs) {
+    private SeasonPlanGenerationResult parseResponse(JsonNode response, long latencyMs, String selectedModel) {
         if (response == null || !"completed".equals(response.path("status").asText())) {
             String reason = response == null ? "resposta vazia"
                     : response.path("incomplete_details").path("reason").asText("status não concluído");
@@ -124,7 +144,7 @@ public class OpenAiSeasonPlanGenerator implements SeasonPlanGenerator {
             SeasonPlanProposal proposal = objectMapper.readValue(outputText, SeasonPlanProposal.class);
             JsonNode usage = response.path("usage");
             return new SeasonPlanGenerationResult(proposal, response.path("id").asText(null),
-                    response.path("model").asText(model), nullableInt(usage, "input_tokens"),
+                    response.path("model").asText(selectedModel), nullableInt(usage, "input_tokens"),
                     nullableInt(usage, "output_tokens"), latencyMs);
         } catch (JacksonException exception) {
             throw new OpenAiSeasonPlanException("A saída estruturada não pôde ser desserializada", exception);

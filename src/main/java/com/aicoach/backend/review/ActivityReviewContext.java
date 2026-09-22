@@ -5,6 +5,7 @@ import com.aicoach.backend.dto.ActivityComparisonResponse;
 import java.time.LocalDateTime;
 
 public record ActivityReviewContext(
+        Long athleteId,
         Long reviewId,
         Long activityId,
         LocalDateTime startedAt,
